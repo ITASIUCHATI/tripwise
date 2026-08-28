@@ -11,7 +11,10 @@ export class RecommendationsService {
         private readonly tripsService: TripsService,
     ) {}
 
-    async plan(input: any) {
+    async plan(
+        input: any,
+        userId: number,
+    ) {
         const mlServiceUrl =
             process.env.ML_SERVICE_URL ||
             'http://localhost:8000';
@@ -22,7 +25,8 @@ export class RecommendationsService {
                 {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type':
+                            'application/json',
                     },
                     body: JSON.stringify(input),
                 },
@@ -39,6 +43,7 @@ export class RecommendationsService {
             await this.tripsService.create({
                 ...input,
                 result,
+                userId,
             });
 
             return result;

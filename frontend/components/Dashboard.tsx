@@ -14,7 +14,8 @@ import {
     YAxis,
 } from 'recharts';
 
-import { api } from '../lib/api';
+import { api, getToken } from '../lib/api';
+import { useRouter } from 'next/navigation';
 
 type DashboardStats = {
     total: number;
@@ -22,12 +23,18 @@ type DashboardStats = {
 };
 
 export default function Dashboard() {
+    const router = useRouter();
     const [data, setData] =
         useState<DashboardStats | null>(null);
 
     const [error, setError] = useState('');
 
     useEffect(() => {
+        if (!getToken()) {
+            router.replace('/login');
+            return;
+        }
+
         api('/trips/stats')
             .then(setData)
             .catch(() =>
@@ -35,7 +42,7 @@ export default function Dashboard() {
                     'Unable to load dashboard data.',
                 ),
             );
-    }, []);
+    }, [router]);
 
     const chartData = [
         {

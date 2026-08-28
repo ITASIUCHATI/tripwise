@@ -2,18 +2,28 @@ import {
     Body,
     Controller,
     Post,
+    Req,
+    UseGuards,
 } from '@nestjs/common';
 
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RecommendationsService } from './recommendations.service';
 
 @Controller('recommendations')
+@UseGuards(JwtAuthGuard)
 export class RecommendationsController {
     constructor(
         private readonly recommendationsService: RecommendationsService,
     ) {}
 
     @Post('plan')
-    plan(@Body() body: any) {
-        return this.recommendationsService.plan(body);
+    plan(
+        @Req() request: any,
+        @Body() body: any,
+    ) {
+        return this.recommendationsService.plan(
+            body,
+            Number(request.user.sub),
+        );
     }
 }

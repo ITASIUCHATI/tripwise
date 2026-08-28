@@ -1,8 +1,9 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-import { api } from '../lib/api';
+import { api, getToken } from '../lib/api';
 
 type TripResult = {
     destination: string;
@@ -23,6 +24,14 @@ type TripResult = {
         destination: string;
         score: number;
     }[];
+    risk_level: string;
+    model_explanation: {
+        cost: string;
+        risk: string;
+        destination: string;
+        supporting_signals: string;
+        training_note: string;
+    };
 };
 
 const initialForm = {
@@ -35,10 +44,17 @@ const initialForm = {
 };
 
 export default function PlannerForm() {
+    const router = useRouter();
     const [form, setForm] = useState(initialForm);
     const [result, setResult] = useState<TripResult | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (!getToken()) {
+            router.replace('/login');
+        }
+    }, [router]);
 
     async function submit(event: FormEvent) {
         event.preventDefault();
@@ -204,6 +220,10 @@ export default function PlannerForm() {
                         ML TRIP ANALYSIS
                     </p>
 
+                    <div className="model-note">
+                        Cost is predicted by a Random Forest regression model. Destination matching uses TF-IDF similarity. Risk is predicted by a Random Forest classifier. Weather and itinerary rules are supporting signals, not ML predictions.
+                    </div>
+
                     <h2>{result.destination}</h2>
 
                     <div className="metric">
@@ -246,9 +266,9 @@ export default function PlannerForm() {
                     </div>
 
                     <div className="metric">
-                        <span>Trip risk</span>
+                        <span>Predicted trip risk</span>
                         <strong>
-                            {result.risk_score}%
+                            {result.risk_level} · {result.risk_score}%
                         </strong>
                     </div>
 
@@ -266,9 +286,17 @@ export default function PlannerForm() {
                         </strong>
                     </div>
 
-                    <h3>
-                        Recommended activities
-                    </h3>
+                    <h3>What the ML models predict</h3>
+
+                    <div className="model-details">
+                        <p><strong>Cost prediction:</strong> {result.model_explanation.cost}</p>
+                        <p><strong>Risk prediction:</strong> {result.model_explanation.risk}</p>
+                        <p><strong>Destination recommendation:</strong> {result.model_explanation.destination}</p>
+                        <p><strong>Supporting signals:</strong> {result.model_explanation.supporting_signals}</p>
+                        <p><strong>Prototype note:</strong> {result.model_explanation.training_note}</p>
+                    </div>
+
+                    <h3>Recommended activities</h3>
 
                     <ul>
                         {result.activities.map(

@@ -21,7 +21,7 @@ export default function Home() {
 
                 <Link
                     className="button"
-                    href="/planner"
+                    href="/login"
                 >
                     Plan a trip
                 </Link>

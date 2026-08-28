@@ -1,30 +1,33 @@
 # TripWise
 
-TripWise is a full-stack travel intelligence platform using machine learning for destination and activity recommendation, trip cost prediction, price prediction, risk scoring, weather suitability, and itinerary optimization. An LLM layer turns structured predictions into natural-language travel advice.
+TripWise is an ML-powered travel planning application built with Next.js, NestJS, PostgreSQL, FastAPI, and scikit-learn.
 
-## Stack
+## Architecture
 
-Frontend: Next.js, React, TypeScript
-Backend: NestJS, Prisma, PostgreSQL
-ML: Python, FastAPI, scikit-learn
-AI: OpenAI API
+Frontend: Vercel
+Backend: Render
+ML service: Render
+Database: PostgreSQL
 
-## Structure
+## Authentication
 
-- frontend: web application
-- backend: API and database layer
-- ml: prediction and recommendation service
+TripWise uses JWT authentication. Each account can access only its own saved trips and dashboard statistics.
 
-## Local setup
+Demo login:
 
-Create a PostgreSQL database named `tripwise`.
+Email: demo@tripwise.app
+Password: TripWise@123
 
-Copy `.env.example` into `.env` and update the values.
+Users can also create their own account from the login page.
 
-Start the ML service from `ml` with a Python virtual environment and install `requirements.txt`.
+## ML Components
 
-Start the backend after installing dependencies and generating Prisma Client.
+Cost prediction uses a Random Forest regression model using destination, trip duration, number of travelers, and travel style.
 
-Start the frontend after installing dependencies.
+Risk prediction uses a Random Forest classification model using duration, group size, travel style, and the ratio between the user's budget and predicted trip cost.
 
-The frontend uses `NEXT_PUBLIC_API_URL` to reach the backend.
+Destination recommendation uses TF-IDF cosine similarity across destination profiles and the user's interests, style, and destination preference.
+
+Weather suitability and itinerary optimization are supporting rule-based components rather than ML predictions.
+
+The current models use generated travel scenarios for a reproducible prototype. Production accuracy would require retraining with real historical travel data.

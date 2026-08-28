@@ -6,7 +6,8 @@ import {
 } from 'react';
 
 import TripCard from '../../components/TripCard';
-import { api } from '../../lib/api';
+import { api, getToken } from '../../lib/api';
+import { useRouter } from 'next/navigation';
 
 type Trip = {
     id: number;
@@ -19,10 +20,16 @@ type Trip = {
 };
 
 export default function TripsPage() {
+    const router = useRouter();
     const [trips, setTrips] = useState<Trip[]>([]);
     const [error, setError] = useState('');
 
     useEffect(() => {
+        if (!getToken()) {
+            router.replace('/login');
+            return;
+        }
+
         api('/trips')
             .then(setTrips)
             .catch(() =>
@@ -30,7 +37,7 @@ export default function TripsPage() {
                     'Unable to load saved trips.',
                 ),
             );
-    }, []);
+    }, [router]);
 
     return (
         <main className="page">

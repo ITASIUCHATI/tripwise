@@ -8,43 +8,55 @@ export class TripsService {
         private readonly prisma: PrismaService,
     ) {}
 
-    async list() {
+    async list(userId: number) {
         return this.prisma.trip.findMany({
+            where: {
+                userId,
+            },
             orderBy: {
                 createdAt: 'desc',
             },
         });
     }
 
-    async stats() {
-        const result = await this.prisma.trip.aggregate({
-            _count: {
-                id: true,
-            },
-            _avg: {
-                budget: true,
-            },
-        });
+    async stats(userId: number) {
+        const result =
+            await this.prisma.trip.aggregate({
+                where: {
+                    userId,
+                },
+                _count: {
+                    id: true,
+                },
+                _avg: {
+                    budget: true,
+                },
+            });
 
         return {
             total: result._count.id,
-            averageBudget: result._avg.budget || 0,
+            averageBudget:
+                result._avg.budget || 0,
         };
     }
 
     async create(data: any) {
         return this.prisma.trip.create({
             data: {
-                destination: String(data.destination || ''),
+                destination: String(
+                    data.destination || '',
+                ),
                 days: Number(data.days),
                 budget: Number(data.budget),
                 people: Number(data.people),
-                interests: String(data.interests || ''),
-                style: String(data.style || 'balanced'),
+                interests: String(
+                    data.interests || '',
+                ),
+                style: String(
+                    data.style || 'balanced',
+                ),
                 result: data.result,
-                userId: data.userId
-                    ? Number(data.userId)
-                    : undefined,
+                userId: Number(data.userId),
             },
         });
     }
