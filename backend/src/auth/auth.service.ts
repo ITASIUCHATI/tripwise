@@ -84,14 +84,7 @@ export class AuthService {
                     },
                 });
 
-            await this.prisma.trip.updateMany({
-                where: {
-                    userId: null,
-                },
-                data: {
-                    userId: user.id,
-                },
-            });
+          
         }
 
         if (
