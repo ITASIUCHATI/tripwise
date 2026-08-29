@@ -10,8 +10,7 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-
-USER_AGENT = "TripWise/3.0 (travel-planning prototype)"
+USER_AGENT = "TripWise/4.0 (travel-planning prototype)"
 
 INTEREST_ALIASES = {
     "nature": "nature landscape forest waterfall lake mountain",
@@ -30,10 +29,7 @@ INTEREST_ALIASES = {
 def _request_json(url, timeout=12):
     request = urllib.request.Request(
         url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json",
-        },
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -47,20 +43,38 @@ def _slug(value):
     return urllib.parse.quote(str(value).replace(" ", "_"), safe="")
 
 
+def _normalise_geo(item):
+    name = _clean_text(item.get("name"))
+    admin1 = _clean_text(item.get("admin1"))
+    country = _clean_text(item.get("country"))
+    parts = [part for part in [name, admin1, country] if part]
+    display_name = ", ".join(dict.fromkeys(parts))
+    return {
+        "name": name,
+        "admin1": admin1,
+        "country": country,
+        "country_code": _clean_text(item.get("country_code")),
+        "latitude": item.get("latitude"),
+        "longitude": item.get("longitude"),
+        "timezone": item.get("timezone"),
+        "population": item.get("population"),
+        "feature_code": _clean_text(item.get("feature_code")),
+        "display_name": display_name or name,
+    }
+
+
 @lru_cache(maxsize=256)
 def geocode_destination(query):
     params = urllib.parse.urlencode(
         {
             "name": query,
-            "count": 5,
+            "count": 10,
             "language": "en",
             "format": "json",
         }
     )
-    data = _request_json(
-        f"https://geocoding-api.open-meteo.com/v1/search?{params}"
-    )
-    return data.get("results", [])
+    data = _request_json(f"https://geocoding-api.open-meteo.com/v1/search?{params}")
+    return [_normalise_geo(item) for item in data.get("results", [])]
 
 
 @lru_cache(maxsize=256)
@@ -75,10 +89,44 @@ def wikipedia_search(query):
             "utf8": 1,
         }
     )
-    data = _request_json(
-        f"https://en.wikipedia.org/w/api.php?{params}"
-    )
+    data = _request_json(f"https://en.wikipedia.org/w/api.php?{params}")
     return data.get("query", {}).get("search", [])
+
+
+@lru_cache(maxsize=256)
+def wikipedia_opensearch(query):
+    params = urllib.parse.urlencode(
+        {
+            "action": "opensearch",
+            "search": query,
+            "limit": 10,
+            "namespace": 0,
+            "format": "json",
+        }
+    )
+    data = _request_json(f"https://en.wikipedia.org/w/api.php?{params}")
+    return data[1] if isinstance(data, list) and len(data) > 1 else []
+
+
+@lru_cache(maxsize=256)
+def wikidata_search(query):
+    params = urllib.parse.urlencode(
+        {
+            "action": "wbsearchentities",
+            "search": query,
+            "language": "en",
+            "limit": 10,
+            "format": "json",
+        }
+    )
+    data = _request_json(f"https://www.wikidata.org/w/api.php?{params}")
+    results = []
+    for item in data.get("search", []):
+        label = _clean_text(item.get("label"))
+        description = _clean_text(item.get("description"))
+        if label:
+            results.append({"label": label, "description": description})
+    return results
 
 
 @lru_cache(maxsize=512)
@@ -115,100 +163,148 @@ def _match_score(query, candidate):
     return SequenceMatcher(None, a, b).ratio() * 100
 
 
-def resolve_destination(query):
+def _dedupe_locations(locations):
+    unique = []
+    seen = set()
+    for item in locations:
+        key = (
+            item.get("name", "").lower(),
+            item.get("admin1", "").lower(),
+            item.get("country", "").lower(),
+        )
+        if not key[0] or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
+
+
+def _fuzzy_location_candidates(query):
+    candidates = []
+    seen = set()
+
+    def add(value, source_score):
+        value = _clean_text(value)
+        if not value or value.lower() in seen:
+            return
+        seen.add(value.lower())
+        candidates.append((value, source_score))
+
+    try:
+        for item in wikidata_search(query):
+            add(item.get("label"), 1.0)
+    except Exception:
+        pass
+
+    for search_query in [query, f"{query} travel", f"{query} city", f"{query} tourist"]:
+        try:
+            for item in wikipedia_search(search_query):
+                add(item.get("title"), 0.8)
+        except Exception:
+            pass
+
+    try:
+        for title in wikipedia_opensearch(query):
+            add(title, 0.9)
+    except Exception:
+        pass
+
+    scored = []
+    for candidate, source_score in candidates:
+        raw = _match_score(query, candidate)
+        score = min(100.0, raw + source_score * 2.0)
+        if raw >= 45:
+            scored.append((candidate, score, raw))
+    scored.sort(key=lambda item: item[1], reverse=True)
+    return scored[:8]
+
+
+def search_destination_options(query):
+    original = _clean_text(query)
+    if not original:
+        return []
+
+    try:
+        direct = geocode_destination(original)
+    except Exception:
+        direct = []
+
+    if direct:
+        exact = [item for item in direct if item["name"].lower() == original.lower()]
+        if exact:
+            return _dedupe_locations(exact + [item for item in direct if item not in exact])[:8]
+        return _dedupe_locations(direct)[:8]
+
+    locations = []
+    for candidate, score, raw in _fuzzy_location_candidates(original):
+        try:
+            geocoded = geocode_destination(candidate)
+        except Exception:
+            geocoded = []
+        for location in geocoded[:4]:
+            location["correction_score"] = round(min(100.0, score), 1)
+            location["raw_match_score"] = round(raw, 1)
+            locations.append(location)
+
+    return _dedupe_locations(locations)[:8]
+
+
+def _selected_location(value):
+    if not isinstance(value, dict):
+        return None
+    name = _clean_text(value.get("name"))
+    latitude = value.get("latitude")
+    longitude = value.get("longitude")
+    if not name or latitude is None or longitude is None:
+        return None
+    return {
+        "name": name,
+        "admin1": _clean_text(value.get("admin1")),
+        "country": _clean_text(value.get("country")),
+        "country_code": _clean_text(value.get("country_code")),
+        "latitude": float(latitude),
+        "longitude": float(longitude),
+        "timezone": _clean_text(value.get("timezone")),
+        "display_name": _clean_text(value.get("display_name")) or name,
+    }
+
+
+def resolve_destination(query, selected=None, require_unique=False):
     original = _clean_text(query)
     if not original:
         raise ValueError("Destination is required.")
 
-    geocode_results = []
-    try:
-        geocode_results = geocode_destination(original)
-    except Exception:
-        geocode_results = []
-
-    if geocode_results:
-        best = geocode_results[0]
-        name = _clean_text(best.get("name")) or original
-        country = _clean_text(best.get("country"))
-        display_name = f"{name}, {country}" if country else name
-        confidence = _match_score(original, name)
+    selected_location = _selected_location(selected)
+    if selected_location:
         return {
             "input": original,
-            "name": name,
-            "display_name": display_name,
-            "country": country,
-            "latitude": best.get("latitude"),
-            "longitude": best.get("longitude"),
-            "timezone": best.get("timezone"),
-            "corrected": name.lower() != original.lower(),
-            "correction_confidence": round(confidence, 1),
+            **selected_location,
+            "corrected": selected_location["name"].lower() != original.lower(),
+            "correction_confidence": float(selected.get("correction_score") or 100),
         }
 
-    searches = []
-    for search_query in [original, f"{original} travel", f"{original} tourist attractions"]:
-        try:
-            searches.extend(wikipedia_search(search_query))
-        except Exception:
-            continue
-
-    candidates = []
-    seen = set()
-    for item in searches:
-        title = _clean_text(item.get("title"))
-        if not title or title.lower() in seen:
-            continue
-        seen.add(title.lower())
-        candidates.append(title)
-
-    if not candidates:
+    options = search_destination_options(original)
+    if not options:
         raise ValueError(
             "I could not identify this destination. Check the spelling and try a city, region or country name."
         )
 
-    scored = sorted(
-        ((candidate, _match_score(original, candidate)) for candidate in candidates),
-        key=lambda item: item[1],
-        reverse=True,
-    )
-    candidate, score = scored[0]
-    if score < 45:
-        raise ValueError(
-            "I could not confidently identify this destination. Check the spelling and try again."
-        )
+    if require_unique and len(options) > 1:
+        raise ValueError("Please choose the destination from the suggestions so TripWise uses the correct location.")
 
-    summary = wikipedia_summary(candidate)
-    coordinates = (summary or {}).get("coordinates") or []
-    latitude = coordinates[0].get("lat") if coordinates else None
-    longitude = coordinates[0].get("lon") if coordinates else None
-
-    if latitude is None or longitude is None:
-        try:
-            fallback = geocode_destination(candidate)
-            if fallback:
-                latitude = fallback[0].get("latitude")
-                longitude = fallback[0].get("longitude")
-        except Exception:
-            pass
-
+    best = options[0]
+    confidence = _match_score(original, best["name"])
     return {
         "input": original,
-        "name": candidate,
-        "display_name": candidate,
-        "country": "",
-        "latitude": latitude,
-        "longitude": longitude,
-        "timezone": None,
-        "corrected": candidate.lower() != original.lower(),
-        "correction_confidence": round(score, 1),
+        **best,
+        "corrected": best["name"].lower() != original.lower(),
+        "correction_confidence": round(float(best.get("correction_score") or confidence), 1),
     }
 
 
 def _interest_text(interests):
     tokens = [x.strip().lower() for x in str(interests or "").split(",") if x.strip()]
-    expanded = []
-    for token in tokens:
-        expanded.append(INTEREST_ALIASES.get(token, token))
-    return " ".join(expanded) or "nature sightseeing culture food"
+    return " ".join(INTEREST_ALIASES.get(token, token) for token in tokens) or "nature sightseeing culture food"
 
 
 def _search_place_candidates(destination_name, interests):
@@ -236,7 +332,7 @@ def _search_place_candidates(destination_name, interests):
     return candidates[:30]
 
 
-def recommend_places(destination_name, interests, limit=8):
+def recommend_places(destination_name, interests, limit=6):
     candidates = _search_place_candidates(destination_name, interests)
     documents = []
     records = []
@@ -246,9 +342,8 @@ def recommend_places(destination_name, interests, limit=8):
         summary = wikipedia_summary(title)
         if not summary:
             continue
-        text = f"{summary['name']} {summary['description']}"
         records.append(summary)
-        documents.append(text)
+        documents.append(f"{summary['name']} {summary['description']}")
 
     if not records:
         return []
@@ -256,12 +351,7 @@ def recommend_places(destination_name, interests, limit=8):
     vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
     matrix = vectorizer.fit_transform(documents + [interest_text])
     scores = cosine_similarity(matrix[-1], matrix[:-1]).flatten()
-
-    ranked = sorted(
-        zip(records, scores),
-        key=lambda pair: pair[1],
-        reverse=True,
-    )
+    ranked = sorted(zip(records, scores), key=lambda pair: pair[1], reverse=True)
 
     places = []
     for record, score in ranked[:limit]:
@@ -270,41 +360,17 @@ def recommend_places(destination_name, interests, limit=8):
                 "name": record["name"],
                 "description": record["description"],
                 "match_score": round(float(score) * 100, 1),
-                "tags": [
-                    token
-                    for token in str(interests or "").split(",")
-                    if token.strip()
-                ],
-                "image": record.get("image"),
+                "tags": [token.strip() for token in str(interests or "").split(",") if token.strip()],
                 "url": record.get("url"),
             }
         )
     return places
 
 
-def _month_name(month):
-    return [
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December",
-    ][month - 1]
-
-
-def _season_label(months):
-    if not months:
-        return "Weather data unavailable"
-    names = [_month_name(m) for m in months]
-    if len(names) == 1:
-        return names[0]
-    if len(names) == 2:
-        return f"{names[0]} and {names[1]}"
-    return f"{names[0]} to {names[-1]}"
-
-
 @lru_cache(maxsize=128)
 def historical_weather(latitude, longitude):
     if latitude is None or longitude is None:
         return None
-
     params = urllib.parse.urlencode(
         {
             "latitude": round(float(latitude), 4),
@@ -316,12 +382,24 @@ def historical_weather(latitude, longitude):
         }
     )
     try:
-        return _request_json(
-            f"https://archive-api.open-meteo.com/v1/archive?{params}",
-            timeout=20,
-        )
+        return _request_json(f"https://archive-api.open-meteo.com/v1/archive?{params}", timeout=20)
     except Exception:
         return None
+
+
+def _month_name(month):
+    return ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][month - 1]
+
+
+def _season_label(months):
+    if not months:
+        return "Weather data unavailable"
+    names = [_month_name(m) for m in months]
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{names[0]} to {names[-1]}"
 
 
 def best_time_from_weather(latitude, longitude):
@@ -344,8 +422,6 @@ def best_time_from_weather(latitude, longitude):
         try:
             month = int(date[5:7])
         except Exception:
-            continue
-        if month not in buckets:
             continue
         if index < len(temps) and temps[index] is not None:
             buckets[month]["temps"].append(float(temps[index]))
@@ -382,10 +458,7 @@ def best_time_from_weather(latitude, longitude):
 
     return {
         "best_time": _season_label(selected),
-        "best_time_note": (
-            f"This window is selected from 10 years of historical temperature and precipitation patterns. "
-            f"The selected months average about {average_temp:.0f}°C with roughly {average_rain:.1f} mm of precipitation per day."
-        ),
+        "best_time_note": f"This window is selected from 10 years of historical temperature and precipitation patterns. The selected months average about {average_temp:.0f}°C with roughly {average_rain:.1f} mm of precipitation per day.",
         "weather": {
             "average_temperature": round(average_temp, 1),
             "average_precipitation": round(average_rain, 1),
@@ -397,82 +470,30 @@ def best_time_from_weather(latitude, longitude):
 def build_dynamic_risks(summary_text, weather, latitude=None):
     text = str(summary_text or "").lower()
     risks = []
-
     avg_rain = float(weather.get("average_precipitation", 0) or 0)
     avg_temp = float(weather.get("average_temperature", 22) or 22)
 
     if avg_rain >= 6:
-        risks.append((
-            "Heavy rainfall",
-            "high",
-            "Wet conditions can affect roads, trails, visibility and outdoor activities during rainy periods.",
-        ))
+        risks.append(("Heavy rainfall", "high", "Wet conditions can affect roads, trails, visibility and outdoor activities during rainy periods."))
     elif avg_rain >= 3:
-        risks.append((
-            "Rain and slippery surfaces",
-            "moderate",
-            "Rain can make outdoor paths and roads slippery and may disrupt some activities.",
-        ))
-
+        risks.append(("Rain and slippery surfaces", "moderate", "Rain can make outdoor paths and roads slippery and may disrupt some activities."))
     if avg_temp >= 30:
-        risks.append((
-            "Heat and dehydration",
-            "high",
-            "Hot weather can increase dehydration and heat-exposure risk during sightseeing and outdoor activities.",
-        ))
+        risks.append(("Heat and dehydration", "high", "Hot weather can increase dehydration and heat-exposure risk during sightseeing and outdoor activities."))
     elif avg_temp >= 26:
-        risks.append((
-            "Heat exposure",
-            "moderate",
-            "Warm conditions can make long outdoor sightseeing sessions tiring without adequate hydration and shade.",
-        ))
-
+        risks.append(("Heat exposure", "moderate", "Warm conditions can make long outdoor sightseeing sessions tiring without adequate hydration and shade."))
     if avg_temp <= 5:
-        risks.append((
-            "Cold weather",
-            "high",
-            "Low temperatures can require suitable clothing and can affect outdoor comfort and transport.",
-        ))
+        risks.append(("Cold weather", "high", "Low temperatures can require suitable clothing and can affect outdoor comfort and transport."))
     elif avg_temp <= 12:
-        risks.append((
-            "Cold conditions",
-            "moderate",
-            "Cool weather may require warm clothing, especially for early-morning and evening activities.",
-        ))
-
-    if "mountain" in text or "himalaya" in text or "high-altitude" in text:
-        risks.append((
-            "Altitude and mountain travel",
-            "moderate",
-            "Mountain destinations can involve altitude changes, winding roads and physically demanding excursions.",
-        ))
-
+        risks.append(("Cold conditions", "moderate", "Cool weather may require warm clothing, especially for early-morning and evening activities."))
+    if any(word in text for word in ["mountain", "himalaya", "high-altitude"]):
+        risks.append(("Altitude and mountain travel", "moderate", "Mountain destinations can involve altitude changes, winding roads and physically demanding excursions."))
     if any(word in text for word in ["trek", "hiking", "trail", "climb"]):
-        risks.append((
-            "Trekking and terrain",
-            "moderate",
-            "Trails and uneven terrain can cause fatigue or falls; conditions may change with weather.",
-        ))
-
+        risks.append(("Trekking and terrain", "moderate", "Trails and uneven terrain can cause fatigue or falls; conditions may change with weather."))
     if any(word in text for word in ["coast", "beach", "sea", "island", "ocean"]):
-        risks.append((
-            "Sea and water conditions",
-            "moderate",
-            "Swimming and water activities depend on local currents, waves, weather and operator guidance.",
-        ))
-
+        risks.append(("Sea and water conditions", "moderate", "Swimming and water activities depend on local currents, waves, weather and operator guidance."))
     if any(word in text for word in ["desert", "arid"]):
-        risks.append((
-            "Dry conditions",
-            "moderate",
-            "Dry environments can increase dehydration and heat exposure, particularly during daytime excursions.",
-        ))
-
-    risks.append((
-        "Local transport and access",
-        "low",
-        "Travel time and accessibility can change because of traffic, local conditions, closures or seasonal disruption.",
-    ))
+        risks.append(("Dry conditions", "moderate", "Dry environments can increase dehydration and heat exposure, particularly during daytime excursions."))
+    risks.append(("Local transport and access", "low", "Travel time and accessibility can change because of traffic, local conditions, closures or seasonal disruption."))
 
     unique = []
     seen = set()
@@ -481,3 +502,15 @@ def build_dynamic_risks(summary_text, weather, latitude=None):
             seen.add(risk[0])
             unique.append(risk)
     return unique
+
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    if None in [lat1, lon1, lat2, lon2]:
+        return None
+    radius = 6371.0
+    p1 = math.radians(float(lat1))
+    p2 = math.radians(float(lat2))
+    dp = math.radians(float(lat2) - float(lat1))
+    dl = math.radians(float(lon2) - float(lon1))
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))

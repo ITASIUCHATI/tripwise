@@ -704,3 +704,105 @@ nav div a.active {
 .place-card {
     overflow: hidden;
 }
+
+.hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 28px;
+}
+
+.secondary-button {
+    display: inline-block;
+    padding: 14px 20px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #ffffff;
+    font-weight: 700;
+}
+
+.location-popup {
+    position: absolute;
+    z-index: 20;
+    left: 0;
+    right: 0;
+    top: calc(100% - 1px);
+    display: grid;
+    gap: 6px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 14px 35px #00000018;
+}
+
+.location-popup > strong {
+    padding: 5px 7px 8px;
+    font-size: 13px;
+}
+
+.location-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: #f8f7f4;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
+
+.location-option:hover {
+    border-color: var(--input-border);
+    background: #f0eee9;
+}
+
+.location-option span {
+    font-weight: 700;
+}
+
+.location-option small {
+    color: var(--muted);
+    font-weight: 400;
+}
+
+.destination-hero-image {
+    display: block;
+    width: 100%;
+    height: 230px;
+    object-fit: cover;
+    margin-bottom: 18px;
+    border-radius: 14px;
+}
+
+.auth-switcher {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+    margin: 20px 0 4px;
+    padding: 4px;
+    border-radius: 10px;
+    background: #f2f0eb;
+}
+
+.auth-switch {
+    border: 0;
+    padding: 10px;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+}
+
+.auth-switch.active {
+    background: #ffffff;
+    color: var(--text);
+    box-shadow: 0 2px 8px #0000000a;
+}
