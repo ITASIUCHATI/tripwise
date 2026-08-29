@@ -16,6 +16,17 @@ export class RecommendationsController {
         private readonly recommendationsService: RecommendationsService,
     ) {}
 
+    @Post('suggest-destination')
+    suggestDestination(
+        @Body() body: {
+            destination: string;
+        },
+    ) {
+        return this.recommendationsService.suggestDestination(
+            body.destination,
+        );
+    }
+
     @Post('plan')
     plan(
         @Req() request: any,
