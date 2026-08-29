@@ -301,7 +301,7 @@ export default function PlannerForm() {
                                 event.target.value,
                             )
                         }
-                        placeholder="Meghalaya"
+                        placeholder="Destination"
                     />
 
                     {destinationSuggestion && (
@@ -320,10 +320,6 @@ export default function PlannerForm() {
                         </button>
                     )}
 
-                    <small>
-                        Try Meghalaya, Manali, Coorg, Goa,
-                        Jaipur, Rishikesh, Sikkim or Kerala.
-                    </small>
                 </label>
 
                 <label>
