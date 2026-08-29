@@ -50,9 +50,9 @@ type TripResult = {
 
 const initialForm = {
     destination: '',
-    days: 5,
-    people: 2,
-    interests: 'nature,food',
+    days: 2,
+    people: 1,
+    interests: 'nature',
 };
 
 function formatMoney(value: number) {
@@ -174,7 +174,7 @@ export default function PlannerForm() {
                             )
                         }
                         onBlur={checkDestination}
-                        placeholder="Meghalaya, Paris, Tokyo..."
+                        placeholder="Destination"
                     />
 
                     {suggestionLoading && (
@@ -195,9 +195,6 @@ export default function PlannerForm() {
                         </button>
                     )}
 
-                    <small>
-                        You can enter a city, region or country. TripWise will resolve the destination dynamically.
-                    </small>
                 </label>
 
                 <label>
@@ -207,7 +204,7 @@ export default function PlannerForm() {
                         required
                         type="number"
                         min="1"
-                        max="30"
+                        max="365"
                         value={form.days}
                         onChange={(event) =>
                             updateField(
@@ -225,7 +222,7 @@ export default function PlannerForm() {
                         required
                         type="number"
                         min="1"
-                        max="20"
+                        max="1000"
                         value={form.people}
                         onChange={(event) =>
                             updateField(
