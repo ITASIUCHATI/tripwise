@@ -13,10 +13,22 @@ export default function LoginPage() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
+    function isValidEmail(value: string) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(
+            value.trim(),
+        );
+    }
+
     async function submit(event: FormEvent) {
         event.preventDefault();
-        setLoading(true);
         setError('');
+
+        if (!isValidEmail(email)) {
+            setError('Please enter a valid email address.');
+            return;
+        }
+
+        setLoading(true);
 
         try {
             const data = await api(
@@ -66,6 +78,8 @@ export default function LoginPage() {
                             value={email}
                             onChange={(event) => setEmail(event.target.value)}
                             required
+                            autoComplete="email"
+                            inputMode="email"
                         />
                     </label>
 

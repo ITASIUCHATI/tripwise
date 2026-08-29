@@ -1,549 +1,483 @@
+import json
+import math
+import re
+import urllib.parse
+import urllib.request
+from difflib import SequenceMatcher
+from functools import lru_cache
+
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-DESTINATIONS = [
-    {
-        "name": "Meghalaya",
-        "tags": "nature waterfalls hills peaceful food adventure photography",
-        "base": 9000,
-        "daily": 1500,
-        "best_time": "October to April",
-        "best_time_note": "Cooler, clearer months are ideal for waterfalls, viewpoints and outdoor exploration.",
-        "places": [
-            {
-                "name": "Sohra (Cherrapunji)",
-                "description": "A misty hill region known for dramatic waterfalls, caves and lush landscapes.",
-                "tags": "nature waterfall adventure photography",
-            },
-            {
-                "name": "Dawki",
-                "description": "A scenic riverside destination famous for the clear Umngot River and boating.",
-                "tags": "nature adventure peaceful photography",
-            },
-            {
-                "name": "Mawlynnong",
-                "description": "A peaceful village surrounded by greenery, bamboo bridges and scenic viewpoints.",
-                "tags": "nature peaceful photography culture",
-            },
-            {
-                "name": "Shillong",
-                "description": "A lively hill city with cafes, viewpoints, local food and a relaxed cultural scene.",
-                "tags": "food culture shopping peaceful photography",
-            },
-            {
-                "name": "Nongriat",
-                "description": "A rewarding trek through forest trails to the famous living root bridges.",
-                "tags": "adventure nature trekking photography",
-            },
-        ],
-        "risks": [
-            (
-                "Heavy rain",
-                "high",
-                "Rain can make roads, trails and waterfall areas slippery or temporarily inaccessible.",
-            ),
-            (
-                "Road conditions",
-                "moderate",
-                "Hill roads can be slow or difficult during heavy rainfall.",
-            ),
-            (
-                "Trekking fatigue",
-                "moderate",
-                "Some attractions require long walks, steep steps or trekking.",
-            ),
-        ],
-    },
-    {
-        "name": "Manali",
-        "tags": "mountains snow adventure nature trekking food photography peaceful",
-        "base": 10500,
-        "daily": 1750,
-        "best_time": "March to June and October to February",
-        "best_time_note": "Spring and early summer are good for general sightseeing; winter is best for snow experiences.",
-        "places": [
-            {
-                "name": "Solang Valley",
-                "description": "A mountain valley popular for scenic views and seasonal adventure activities.",
-                "tags": "adventure snow nature photography",
-            },
-            {
-                "name": "Old Manali",
-                "description": "A relaxed area with cafes, local shops, riverside walks and mountain views.",
-                "tags": "food peaceful shopping culture",
-            },
-            {
-                "name": "Rohtang Pass",
-                "description": "A high-altitude mountain pass offering dramatic Himalayan scenery when accessible.",
-                "tags": "snow adventure nature photography",
-            },
-            {
-                "name": "Hadimba Temple",
-                "description": "A historic wooden temple set among tall cedar trees near Manali.",
-                "tags": "culture peaceful nature photography",
-            },
-            {
-                "name": "Vashisht",
-                "description": "A hillside village known for its temple, hot springs and panoramic views.",
-                "tags": "peaceful culture nature",
-            },
-        ],
-        "risks": [
-            (
-                "Altitude effects",
-                "moderate",
-                "Higher areas can cause headache, breathlessness or fatigue for some travelers.",
-            ),
-            (
-                "Snow and road closures",
-                "high",
-                "Winter weather can affect access to high-altitude roads and passes.",
-            ),
-            (
-                "Adventure activity risk",
-                "moderate",
-                "Trekking and outdoor activities require proper equipment and local guidance.",
-            ),
-        ],
-    },
-    {
-        "name": "Coorg",
-        "tags": "coffee nature peaceful food hills photography relaxed",
-        "base": 8500,
-        "daily": 1400,
-        "best_time": "October to March",
-        "best_time_note": "Pleasant weather makes these months comfortable for plantations, viewpoints and outdoor activities.",
-        "places": [
-            {
-                "name": "Abbey Falls",
-                "description": "A popular waterfall surrounded by dense greenery and coffee-growing landscapes.",
-                "tags": "nature waterfall photography",
-            },
-            {
-                "name": "Raja's Seat",
-                "description": "A scenic viewpoint known for beautiful valley views and sunsets.",
-                "tags": "peaceful nature photography",
-            },
-            {
-                "name": "Mandalpatti",
-                "description": "A high viewpoint offering expansive views across the Western Ghats.",
-                "tags": "adventure nature photography",
-            },
-            {
-                "name": "Coffee Plantations",
-                "description": "A chance to explore Coorg's coffee culture, plantations and local produce.",
-                "tags": "food nature culture peaceful",
-            },
-            {
-                "name": "Dubare",
-                "description": "A riverside forest area suited to nature experiences and outdoor activities.",
-                "tags": "nature adventure peaceful",
-            },
-        ],
-        "risks": [
-            (
-                "Monsoon rain",
-                "moderate",
-                "Rain can make trails and roads slippery and may affect waterfall access.",
-            ),
-            (
-                "Road travel",
-                "low",
-                "Curvy hill roads can make journeys slower, especially in poor weather.",
-            ),
-            (
-                "Leeches on trails",
-                "low",
-                "Forest trails during wet periods may have leeches.",
-            ),
-        ],
-    },
-    {
-        "name": "Goa",
-        "tags": "beach nightlife food adventure water sports relaxed culture shopping",
-        "base": 10000,
-        "daily": 1900,
-        "best_time": "November to February",
-        "best_time_note": "The dry season is generally the most comfortable for beaches, sightseeing and outdoor activities.",
-        "places": [
-            {
-                "name": "Baga and Calangute",
-                "description": "Busy North Goa beaches with restaurants, nightlife and water activities.",
-                "tags": "beach food adventure shopping",
-            },
-            {
-                "name": "Palolem",
-                "description": "A scenic South Goa beach with a calmer atmosphere and beautiful sunsets.",
-                "tags": "beach peaceful photography",
-            },
-            {
-                "name": "Fontainhas",
-                "description": "A colorful heritage quarter with Portuguese-era architecture and narrow lanes.",
-                "tags": "culture photography food",
-            },
-            {
-                "name": "Old Goa",
-                "description": "A historic area with landmark churches and important heritage sites.",
-                "tags": "culture history photography",
-            },
-            {
-                "name": "Dudhsagar Falls",
-                "description": "A spectacular waterfall experience surrounded by forested Western Ghats.",
-                "tags": "nature adventure photography",
-            },
-        ],
-        "risks": [
-            (
-                "Strong sea conditions",
-                "moderate",
-                "Swimming and water activities can be unsafe when waves or currents are strong.",
-            ),
-            (
-                "Heat and dehydration",
-                "moderate",
-                "Sun exposure can be significant, especially during hotter months.",
-            ),
-            (
-                "Crowds and peak-season prices",
-                "moderate",
-                "Popular areas can become crowded and accommodation can cost more in peak season.",
-            ),
-        ],
-    },
-    {
-        "name": "Jaipur",
-        "tags": "history culture food architecture shopping photography",
-        "base": 7500,
-        "daily": 1350,
-        "best_time": "October to March",
-        "best_time_note": "Cooler winter months are more comfortable for forts, markets and walking tours.",
-        "places": [
-            {
-                "name": "Amber Fort",
-                "description": "A grand hilltop fort showcasing Rajput architecture, courtyards and historic views.",
-                "tags": "culture history architecture photography",
-            },
-            {
-                "name": "City Palace",
-                "description": "A royal complex combining museums, courtyards and traditional Jaipur architecture.",
-                "tags": "culture history architecture photography",
-            },
-            {
-                "name": "Hawa Mahal",
-                "description": "Jaipur's iconic palace facade, especially striking from the surrounding old-city streets.",
-                "tags": "culture architecture photography",
-            },
-            {
-                "name": "Jantar Mantar",
-                "description": "An impressive historic observatory featuring large astronomical instruments.",
-                "tags": "culture history architecture",
-            },
-            {
-                "name": "Johari Bazaar",
-                "description": "A lively market area known for jewelry, handicrafts, textiles and local shopping.",
-                "tags": "shopping culture food",
-            },
-        ],
-        "risks": [
-            (
-                "Heat",
-                "moderate",
-                "Daytime temperatures can be uncomfortable outside the cooler season.",
-            ),
-            (
-                "Crowded tourist areas",
-                "moderate",
-                "Major forts and markets can be busy during peak hours.",
-            ),
-            (
-                "Traffic",
-                "low",
-                "Urban traffic can increase travel time between attractions.",
-            ),
-        ],
-    },
-    {
-        "name": "Rishikesh",
-        "tags": "adventure river yoga nature trekking peaceful culture food",
-        "base": 7000,
-        "daily": 1300,
-        "best_time": "September to November and February to May",
-        "best_time_note": "Pleasant temperatures support river activities, trekking, yoga and sightseeing.",
-        "places": [
-            {
-                "name": "Laxman Jhula Area",
-                "description": "A scenic riverside area surrounded by temples, cafes and views of the Ganga.",
-                "tags": "culture peaceful food photography",
-            },
-            {
-                "name": "Neer Garh Waterfall",
-                "description": "A forested waterfall trail suited to a short nature outing.",
-                "tags": "nature adventure peaceful",
-            },
-            {
-                "name": "Ganga Riverside",
-                "description": "A peaceful setting for walks, sunsets and the area's spiritual atmosphere.",
-                "tags": "peaceful culture photography",
-            },
-            {
-                "name": "River Rafting",
-                "description": "A popular adventure experience on suitable stretches of the Ganga with trained operators.",
-                "tags": "adventure river",
-            },
-            {
-                "name": "Beatles Ashram",
-                "description": "A distinctive cultural and artistic site with murals and a quiet forest setting.",
-                "tags": "culture photography peaceful",
-            },
-        ],
-        "risks": [
-            (
-                "River activity risk",
-                "high",
-                "Rafting and water activities should only be done with reputable trained operators.",
-            ),
-            (
-                "Monsoon river levels",
-                "high",
-                "Heavy rain can raise river levels and affect access to water activities.",
-            ),
-            (
-                "Trekking terrain",
-                "moderate",
-                "Uneven trails and wet surfaces can increase slip and fall risk.",
-            ),
-        ],
-    },
-    {
-        "name": "Sikkim",
-        "tags": "mountains nature peaceful snow food photography trekking culture",
-        "base": 11000,
-        "daily": 1800,
-        "best_time": "March to May and October to December",
-        "best_time_note": "Spring and autumn generally offer good visibility for mountain views and comfortable sightseeing.",
-        "places": [
-            {
-                "name": "Gangtok",
-                "description": "Sikkim's main hill city with monasteries, viewpoints, markets and mountain scenery.",
-                "tags": "culture food shopping peaceful",
-            },
-            {
-                "name": "Tsomgo Lake",
-                "description": "A high-altitude glacial lake surrounded by dramatic mountain landscapes.",
-                "tags": "nature snow photography",
-            },
-            {
-                "name": "Nathula Pass",
-                "description": "A high mountain pass with striking Himalayan scenery, subject to access conditions and permits.",
-                "tags": "adventure snow nature",
-            },
-            {
-                "name": "Pelling",
-                "description": "A quieter mountain destination known for panoramic views of the Kanchenjunga range.",
-                "tags": "peaceful nature photography",
-            },
-            {
-                "name": "Rumtek Monastery",
-                "description": "An important Buddhist monastery with architecture, spiritual atmosphere and mountain surroundings.",
-                "tags": "culture peaceful photography",
-            },
-        ],
-        "risks": [
-            (
-                "High altitude",
-                "high",
-                "High-altitude locations can cause altitude-related symptoms and require gradual acclimatization.",
-            ),
-            (
-                "Weather changes",
-                "moderate",
-                "Mountain weather can change quickly and affect road access.",
-            ),
-            (
-                "Permit restrictions",
-                "moderate",
-                "Some border and high-altitude areas require permits and may have access restrictions.",
-            ),
-        ],
-    },
-    {
-        "name": "Kerala",
-        "tags": "nature beaches food backwaters peaceful culture photography relaxed",
-        "base": 9500,
-        "daily": 1700,
-        "best_time": "October to March",
-        "best_time_note": "The cooler, drier season is well suited to beaches, backwaters, wildlife and cultural sightseeing.",
-        "places": [
-            {
-                "name": "Alleppey Backwaters",
-                "description": "A relaxing network of canals and lagoons best experienced by boat or houseboat.",
-                "tags": "nature peaceful photography",
-            },
-            {
-                "name": "Munnar",
-                "description": "A cool hill destination surrounded by tea plantations, viewpoints and greenery.",
-                "tags": "nature peaceful photography",
-            },
-            {
-                "name": "Fort Kochi",
-                "description": "A historic coastal neighborhood with colonial architecture, art and local food.",
-                "tags": "culture food photography",
-            },
-            {
-                "name": "Varkala",
-                "description": "A dramatic cliffside beach destination with sea views, cafes and sunset walks.",
-                "tags": "beach peaceful food photography",
-            },
-            {
-                "name": "Thekkady",
-                "description": "A forested destination known for wildlife experiences, spice plantations and outdoor activities.",
-                "tags": "nature adventure photography",
-            },
-        ],
-        "risks": [
-            (
-                "Monsoon disruption",
-                "moderate",
-                "Heavy rain can affect outdoor plans, roads and some activities.",
-            ),
-            (
-                "Heat and humidity",
-                "moderate",
-                "Humidity can make long outdoor sightseeing tiring.",
-            ),
-            (
-                "Wildlife activity precautions",
-                "low",
-                "Follow local guides and park rules during wildlife experiences.",
-            ),
-        ],
-    },
-]
+USER_AGENT = "TripWise/3.0 (travel-planning prototype)"
+
+INTEREST_ALIASES = {
+    "nature": "nature landscape forest waterfall lake mountain",
+    "adventure": "adventure trekking hiking rafting outdoor",
+    "food": "food cuisine restaurant market street food",
+    "culture": "culture heritage temple museum tradition",
+    "peaceful": "peaceful quiet scenic relaxing village",
+    "shopping": "shopping market bazaar mall handicraft",
+    "beach": "beach coast sea island waterfront",
+    "photography": "photography scenic viewpoint architecture landscape",
+    "snow": "snow winter skiing glacier mountain",
+    "history": "history fort palace monument historic heritage",
+}
 
 
-vectorizer = TfidfVectorizer(
-    stop_words="english",
-    ngram_range=(1, 2),
-)
+def _request_json(url, timeout=12):
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
-destination_vectorizer = TfidfVectorizer(
-    analyzer="char_wb",
-    ngram_range=(2, 5),
-    lowercase=True,
-)
+def _clean_text(value):
+    return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
-destination_documents = [
-    f'{item["name"]} {item["tags"]}'
-    for item in DESTINATIONS
-]
+def _slug(value):
+    return urllib.parse.quote(str(value).replace(" ", "_"), safe="")
 
 
-destination_matrix = destination_vectorizer.fit_transform(
-    destination_documents
-)
+@lru_cache(maxsize=256)
+def geocode_destination(query):
+    params = urllib.parse.urlencode(
+        {
+            "name": query,
+            "count": 5,
+            "language": "en",
+            "format": "json",
+        }
+    )
+    data = _request_json(
+        f"https://geocoding-api.open-meteo.com/v1/search?{params}"
+    )
+    return data.get("results", [])
 
 
-def recommend_places(destination: str, interests: str, limit: int = 5):
-    item = next(
-        (
-            d
-            for d in DESTINATIONS
-            if d["name"].lower() == destination.lower()
+@lru_cache(maxsize=256)
+def wikipedia_search(query):
+    params = urllib.parse.urlencode(
+        {
+            "action": "query",
+            "list": "search",
+            "srsearch": query,
+            "srlimit": 12,
+            "format": "json",
+            "utf8": 1,
+        }
+    )
+    data = _request_json(
+        f"https://en.wikipedia.org/w/api.php?{params}"
+    )
+    return data.get("query", {}).get("search", [])
+
+
+@lru_cache(maxsize=512)
+def wikipedia_summary(title):
+    try:
+        data = _request_json(
+            f"https://en.wikipedia.org/api/rest_v1/page/summary/{_slug(title)}"
+        )
+    except Exception:
+        return None
+
+    if data.get("type") == "disambiguation":
+        return None
+
+    thumbnail = data.get("thumbnail") or {}
+    return {
+        "name": _clean_text(data.get("title") or title),
+        "description": _clean_text(
+            data.get("extract")
+            or data.get("description")
+            or "Information is available from the destination reference source."
         ),
-        None,
-    )
+        "image": thumbnail.get("source"),
+        "url": (data.get("content_urls") or {}).get("desktop", {}).get("page"),
+        "coordinates": data.get("coordinates") or [],
+    }
 
-    if not item:
-        return []
 
-    places = item["places"]
+def _match_score(query, candidate):
+    a = re.sub(r"[^a-z0-9]", "", query.lower())
+    b = re.sub(r"[^a-z0-9]", "", candidate.lower())
+    if not a or not b:
+        return 0.0
+    return SequenceMatcher(None, a, b).ratio() * 100
 
-    documents = [
-        f'{place["name"]} {place["tags"]} {place["description"]}'
-        for place in places
-    ]
 
-    matrix = vectorizer.fit_transform(documents)
+def resolve_destination(query):
+    original = _clean_text(query)
+    if not original:
+        raise ValueError("Destination is required.")
 
-    query = vectorizer.transform(
-        [interests or "nature sightseeing"]
-    )
+    geocode_results = []
+    try:
+        geocode_results = geocode_destination(original)
+    except Exception:
+        geocode_results = []
 
-    similarities = cosine_similarity(
-        query,
-        matrix,
-    )[0]
+    if geocode_results:
+        best = geocode_results[0]
+        name = _clean_text(best.get("name")) or original
+        country = _clean_text(best.get("country"))
+        display_name = f"{name}, {country}" if country else name
+        confidence = _match_score(original, name)
+        return {
+            "input": original,
+            "name": name,
+            "display_name": display_name,
+            "country": country,
+            "latitude": best.get("latitude"),
+            "longitude": best.get("longitude"),
+            "timezone": best.get("timezone"),
+            "corrected": name.lower() != original.lower(),
+            "correction_confidence": round(confidence, 1),
+        }
 
-    ranked = np.argsort(similarities)[::-1][:limit]
+    searches = []
+    for search_query in [original, f"{original} travel", f"{original} tourist attractions"]:
+        try:
+            searches.extend(wikipedia_search(search_query))
+        except Exception:
+            continue
 
-    results = []
+    candidates = []
+    seen = set()
+    for item in searches:
+        title = _clean_text(item.get("title"))
+        if not title or title.lower() in seen:
+            continue
+        seen.add(title.lower())
+        candidates.append(title)
 
-    for index in ranked:
-        place = places[int(index)]
-
-        results.append(
-            {
-                "name": place["name"],
-                "description": place["description"],
-                "match_score": round(
-                    float(similarities[int(index)]) * 100,
-                    1,
-                ),
-                "tags": place["tags"].split(),
-            }
+    if not candidates:
+        raise ValueError(
+            "I could not identify this destination. Check the spelling and try a city, region or country name."
         )
 
-    return results
-
-
-def suggest_destination(
-    destination: str,
-    threshold: float = 0.35,
-):
-    value = (destination or "").strip()
-
-    if not value:
-        return None
-
-    exact = next(
-        (
-            item
-            for item in DESTINATIONS
-            if item["name"].lower() == value.lower()
-        ),
-        None,
+    scored = sorted(
+        ((candidate, _match_score(original, candidate)) for candidate in candidates),
+        key=lambda item: item[1],
+        reverse=True,
     )
+    candidate, score = scored[0]
+    if score < 45:
+        raise ValueError(
+            "I could not confidently identify this destination. Check the spelling and try again."
+        )
 
-    if exact:
-        return None
+    summary = wikipedia_summary(candidate)
+    coordinates = (summary or {}).get("coordinates") or []
+    latitude = coordinates[0].get("lat") if coordinates else None
+    longitude = coordinates[0].get("lon") if coordinates else None
 
-    query_matrix = destination_vectorizer.transform(
-        [value]
-    )
-
-    similarities = cosine_similarity(
-        query_matrix,
-        destination_matrix,
-    )[0]
-
-    best_index = int(
-        np.argmax(similarities)
-    )
-
-    best_score = float(
-        similarities[best_index]
-    )
-
-    if best_score < threshold:
-        return None
-
-    best_destination = DESTINATIONS[best_index]
+    if latitude is None or longitude is None:
+        try:
+            fallback = geocode_destination(candidate)
+            if fallback:
+                latitude = fallback[0].get("latitude")
+                longitude = fallback[0].get("longitude")
+        except Exception:
+            pass
 
     return {
-        "name": best_destination["name"],
-        "confidence": round(best_score, 3),
+        "input": original,
+        "name": candidate,
+        "display_name": candidate,
+        "country": "",
+        "latitude": latitude,
+        "longitude": longitude,
+        "timezone": None,
+        "corrected": candidate.lower() != original.lower(),
+        "correction_confidence": round(score, 1),
     }
+
+
+def _interest_text(interests):
+    tokens = [x.strip().lower() for x in str(interests or "").split(",") if x.strip()]
+    expanded = []
+    for token in tokens:
+        expanded.append(INTEREST_ALIASES.get(token, token))
+    return " ".join(expanded) or "nature sightseeing culture food"
+
+
+def _search_place_candidates(destination_name, interests):
+    queries = [
+        f"{destination_name} tourist attractions",
+        f"{destination_name} places to visit",
+    ]
+    for interest in [x.strip().lower() for x in str(interests or "").split(",") if x.strip()][:4]:
+        queries.append(f"{destination_name} {interest}")
+
+    candidates = []
+    seen = set()
+    destination_key = destination_name.lower()
+    for query in queries:
+        try:
+            results = wikipedia_search(query)
+        except Exception:
+            continue
+        for item in results:
+            title = _clean_text(item.get("title"))
+            if not title or title.lower() in seen or title.lower() == destination_key:
+                continue
+            seen.add(title.lower())
+            candidates.append(title)
+    return candidates[:30]
+
+
+def recommend_places(destination_name, interests, limit=8):
+    candidates = _search_place_candidates(destination_name, interests)
+    documents = []
+    records = []
+    interest_text = _interest_text(interests)
+
+    for title in candidates:
+        summary = wikipedia_summary(title)
+        if not summary:
+            continue
+        text = f"{summary['name']} {summary['description']}"
+        records.append(summary)
+        documents.append(text)
+
+    if not records:
+        return []
+
+    vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
+    matrix = vectorizer.fit_transform(documents + [interest_text])
+    scores = cosine_similarity(matrix[-1], matrix[:-1]).flatten()
+
+    ranked = sorted(
+        zip(records, scores),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
+
+    places = []
+    for record, score in ranked[:limit]:
+        places.append(
+            {
+                "name": record["name"],
+                "description": record["description"],
+                "match_score": round(float(score) * 100, 1),
+                "tags": [
+                    token
+                    for token in str(interests or "").split(",")
+                    if token.strip()
+                ],
+                "image": record.get("image"),
+                "url": record.get("url"),
+            }
+        )
+    return places
+
+
+def _month_name(month):
+    return [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ][month - 1]
+
+
+def _season_label(months):
+    if not months:
+        return "Weather data unavailable"
+    names = [_month_name(m) for m in months]
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{names[0]} to {names[-1]}"
+
+
+@lru_cache(maxsize=128)
+def historical_weather(latitude, longitude):
+    if latitude is None or longitude is None:
+        return None
+
+    params = urllib.parse.urlencode(
+        {
+            "latitude": round(float(latitude), 4),
+            "longitude": round(float(longitude), 4),
+            "start_date": "2016-01-01",
+            "end_date": "2025-12-31",
+            "daily": "temperature_2m_mean,precipitation_sum,snowfall_sum",
+            "timezone": "auto",
+        }
+    )
+    try:
+        return _request_json(
+            f"https://archive-api.open-meteo.com/v1/archive?{params}",
+            timeout=20,
+        )
+    except Exception:
+        return None
+
+
+def best_time_from_weather(latitude, longitude):
+    data = historical_weather(latitude, longitude)
+    if not data:
+        return {
+            "best_time": "Weather history unavailable",
+            "best_time_note": "Live destination data was found, but historical weather data could not be retrieved right now.",
+            "weather": {},
+        }
+
+    daily = data.get("daily") or {}
+    dates = daily.get("time") or []
+    temps = daily.get("temperature_2m_mean") or []
+    rain = daily.get("precipitation_sum") or []
+    snow = daily.get("snowfall_sum") or []
+    buckets = {m: {"temps": [], "rain": [], "snow": []} for m in range(1, 13)}
+
+    for index, date in enumerate(dates):
+        try:
+            month = int(date[5:7])
+        except Exception:
+            continue
+        if month not in buckets:
+            continue
+        if index < len(temps) and temps[index] is not None:
+            buckets[month]["temps"].append(float(temps[index]))
+        if index < len(rain) and rain[index] is not None:
+            buckets[month]["rain"].append(float(rain[index]))
+        if index < len(snow) and snow[index] is not None:
+            buckets[month]["snow"].append(float(snow[index]))
+
+    stats = []
+    for month, bucket in buckets.items():
+        if not bucket["temps"]:
+            continue
+        avg_temp = float(np.mean(bucket["temps"]))
+        avg_rain = float(np.mean(bucket["rain"])) if bucket["rain"] else 0.0
+        avg_snow = float(np.mean(bucket["snow"])) if bucket["snow"] else 0.0
+        comfort = max(0.0, 1.0 - abs(avg_temp - 22.0) / 25.0)
+        rain_factor = 1.0 / (1.0 + avg_rain / 5.0)
+        snow_penalty = 0.25 if avg_snow > 5 else 0.0
+        score = comfort * 0.55 + rain_factor * 0.45 - snow_penalty
+        stats.append((month, score, avg_temp, avg_rain, avg_snow))
+
+    if not stats:
+        return {
+            "best_time": "Weather history unavailable",
+            "best_time_note": "Historical weather data did not contain enough observations to calculate a reliable travel window.",
+            "weather": {},
+        }
+
+    stats.sort(key=lambda item: item[1], reverse=True)
+    selected = sorted(item[0] for item in stats[:4])
+    top = [item for item in stats if item[0] in selected]
+    average_temp = float(np.mean([item[2] for item in top]))
+    average_rain = float(np.mean([item[3] for item in top]))
+
+    return {
+        "best_time": _season_label(selected),
+        "best_time_note": (
+            f"This window is selected from 10 years of historical temperature and precipitation patterns. "
+            f"The selected months average about {average_temp:.0f}°C with roughly {average_rain:.1f} mm of precipitation per day."
+        ),
+        "weather": {
+            "average_temperature": round(average_temp, 1),
+            "average_precipitation": round(average_rain, 1),
+            "selected_months": selected,
+        },
+    }
+
+
+def build_dynamic_risks(summary_text, weather, latitude=None):
+    text = str(summary_text or "").lower()
+    risks = []
+
+    avg_rain = float(weather.get("average_precipitation", 0) or 0)
+    avg_temp = float(weather.get("average_temperature", 22) or 22)
+
+    if avg_rain >= 6:
+        risks.append((
+            "Heavy rainfall",
+            "high",
+            "Wet conditions can affect roads, trails, visibility and outdoor activities during rainy periods.",
+        ))
+    elif avg_rain >= 3:
+        risks.append((
+            "Rain and slippery surfaces",
+            "moderate",
+            "Rain can make outdoor paths and roads slippery and may disrupt some activities.",
+        ))
+
+    if avg_temp >= 30:
+        risks.append((
+            "Heat and dehydration",
+            "high",
+            "Hot weather can increase dehydration and heat-exposure risk during sightseeing and outdoor activities.",
+        ))
+    elif avg_temp >= 26:
+        risks.append((
+            "Heat exposure",
+            "moderate",
+            "Warm conditions can make long outdoor sightseeing sessions tiring without adequate hydration and shade.",
+        ))
+
+    if avg_temp <= 5:
+        risks.append((
+            "Cold weather",
+            "high",
+            "Low temperatures can require suitable clothing and can affect outdoor comfort and transport.",
+        ))
+    elif avg_temp <= 12:
+        risks.append((
+            "Cold conditions",
+            "moderate",
+            "Cool weather may require warm clothing, especially for early-morning and evening activities.",
+        ))
+
+    if "mountain" in text or "himalaya" in text or "high-altitude" in text:
+        risks.append((
+            "Altitude and mountain travel",
+            "moderate",
+            "Mountain destinations can involve altitude changes, winding roads and physically demanding excursions.",
+        ))
+
+    if any(word in text for word in ["trek", "hiking", "trail", "climb"]):
+        risks.append((
+            "Trekking and terrain",
+            "moderate",
+            "Trails and uneven terrain can cause fatigue or falls; conditions may change with weather.",
+        ))
+
+    if any(word in text for word in ["coast", "beach", "sea", "island", "ocean"]):
+        risks.append((
+            "Sea and water conditions",
+            "moderate",
+            "Swimming and water activities depend on local currents, waves, weather and operator guidance.",
+        ))
+
+    if any(word in text for word in ["desert", "arid"]):
+        risks.append((
+            "Dry conditions",
+            "moderate",
+            "Dry environments can increase dehydration and heat exposure, particularly during daytime excursions.",
+        ))
+
+    risks.append((
+        "Local transport and access",
+        "low",
+        "Travel time and accessibility can change because of traffic, local conditions, closures or seasonal disruption.",
+    ))
+
+    unique = []
+    seen = set()
+    for risk in risks:
+        if risk[0] not in seen:
+            seen.add(risk[0])
+            unique.append(risk)
+    return unique

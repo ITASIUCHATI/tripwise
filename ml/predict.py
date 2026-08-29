@@ -1,97 +1,100 @@
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
-from recommend import DESTINATIONS, recommend_places
+from recommend import (
+    INTEREST_ALIASES,
+    best_time_from_weather,
+    build_dynamic_risks,
+    recommend_places,
+    resolve_destination,
+    wikipedia_summary,
+)
 
-INTERESTS = [
-    "nature", "adventure", "food", "culture", "peaceful",
-    "shopping", "beach", "photography", "snow", "history",
-]
-
-DESTINATION_INDEX = {
-    item["name"].lower(): index
-    for index, item in enumerate(DESTINATIONS)
-}
-
+INTERESTS = list(INTEREST_ALIASES.keys())
 STYLE_MULTIPLIERS = {
-    "budget": 0.88,
+    "budget": 0.82,
     "balanced": 1.0,
-    "comfort": 1.22,
+    "comfort": 1.25,
 }
 
 
 def interest_flags(interests):
-    text = (interests or "").lower()
+    text = str(interests or "").lower()
     return [1 if interest in text else 0 for interest in INTERESTS]
 
 
-def cost_features(destination, days, people, interests):
-    destination_index = DESTINATION_INDEX.get(destination.lower(), -1)
-    return [[destination_index, days, people, *interest_flags(interests)]]
-
-
+rng = np.random.default_rng(42)
 TRAIN_X = []
 TRAIN_Y = []
-rng = np.random.default_rng(42)
-
-for destination in DESTINATIONS:
-    destination_index = DESTINATION_INDEX[destination["name"].lower()]
-    for _ in range(2500):
-        days = int(rng.integers(1, 31))
-        people = int(rng.integers(1, 11))
-        flags = rng.integers(0, 2, size=len(INTERESTS)).tolist()
-        interest_effect = 1 + flags[1] * 0.04 + flags[2] * 0.025 + flags[5] * 0.015
-        cost = (
-            destination["base"]
-            + destination["daily"] * days
-            + 1200 * people * days
-            + 1800 * max(people - 1, 0)
-        ) * interest_effect
-        TRAIN_X.append([destination_index, days, people, *flags])
-        TRAIN_Y.append(cost)
-
-cost_model = RandomForestRegressor(
-    n_estimators=220,
-    random_state=42,
-    min_samples_leaf=3,
-).fit(TRAIN_X, TRAIN_Y)
-
-
 RISK_X = []
 RISK_Y = []
 
-for destination in DESTINATIONS:
-    destination_index = DESTINATION_INDEX[destination["name"].lower()]
-    base_risk = sum(1 for _, level, _ in destination["risks"] if level == "high")
-    for _ in range(2500):
-        days = int(rng.integers(1, 31))
-        people = int(rng.integers(1, 11))
-        flags = rng.integers(0, 2, size=len(INTERESTS)).tolist()
-        pressure = base_risk
-        pressure += 1 if days > 10 else 0
-        pressure += 1 if people > 6 else 0
-        pressure += 1 if flags[1] else 0
-        pressure += 1 if flags[7] else 0
-        RISK_X.append([destination_index, days, people, *flags])
-        RISK_Y.append(int(pressure >= 2))
+for _ in range(18000):
+    days = int(rng.integers(1, 31))
+    people = int(rng.integers(1, 11))
+    latitude = float(rng.uniform(-55, 70))
+    rain = float(rng.uniform(0, 15))
+    temp = float(rng.uniform(-5, 35))
+    flags = rng.integers(0, 2, size=len(INTERESTS)).tolist()
+
+    domestic_index = 0.85 if rng.random() < 0.72 else 1.18
+    climate_factor = 1 + max(0, abs(temp - 22) - 8) * 0.008
+    interest_factor = 1 + flags[1] * 0.04 + flags[2] * 0.025 + flags[5] * 0.015
+    base = 5500 + abs(latitude) * 18 + rain * 70
+    cost = (
+        base
+        + 1200 * days
+        + 900 * people * days
+        + 1600 * max(people - 1, 0)
+    ) * domestic_index * climate_factor * interest_factor
+
+    features = [days, people, latitude, rain, temp, *flags]
+    TRAIN_X.append(features)
+    TRAIN_Y.append(cost)
+
+    pressure = 0
+    pressure += 2 if rain > 7 else 1 if rain > 3 else 0
+    pressure += 2 if temp >= 32 or temp <= 2 else 1 if temp >= 28 or temp <= 10 else 0
+    pressure += 1 if days > 10 else 0
+    pressure += 1 if people > 6 else 0
+    pressure += 1 if flags[1] else 0
+    pressure += 1 if flags[7] else 0
+    RISK_X.append(features)
+    RISK_Y.append(int(pressure >= 3))
+
+
+cost_model = RandomForestRegressor(
+    n_estimators=260,
+    random_state=42,
+    min_samples_leaf=5,
+    n_jobs=-1,
+).fit(TRAIN_X, TRAIN_Y)
 
 risk_model = RandomForestClassifier(
-    n_estimators=220,
+    n_estimators=260,
     random_state=42,
-    min_samples_leaf=4,
+    min_samples_leaf=5,
+    n_jobs=-1,
 ).fit(RISK_X, RISK_Y)
 
 
+def _features(destination_data, days, people, interests, weather):
+    latitude = float(destination_data.get("latitude") or 20.0)
+    rain = float(weather.get("average_precipitation") or 3.0)
+    temp = float(weather.get("average_temperature") or 22.0)
+    return [[days, people, latitude, rain, temp, *interest_flags(interests)]]
 
-def predict_cost(destination, days, people, interests):
-    value = cost_model.predict(cost_features(destination, days, people, interests))[0]
-    return float(value)
+
+def predict_cost(destination_data, days, people, interests, weather):
+    value = float(cost_model.predict(_features(destination_data, days, people, interests, weather))[0])
+    return max(3500.0, value)
 
 
-def predict_risk(destination, days, people, interests):
-    features = cost_features(destination, days, people, interests)
-    probability = risk_model.predict_proba(features)[0][1]
-    return round(float(probability) * 100, 1)
+def predict_risk(destination_data, days, people, interests, weather):
+    features = _features(destination_data, days, people, interests, weather)
+    probability = float(risk_model.predict_proba(features)[0][1])
+    weather_pressure = min(0.28, float(weather.get("average_precipitation") or 0) / 50)
+    return round(min(100.0, probability * 100 + weather_pressure * 100), 1)
 
 
 def risk_level(score):
@@ -102,18 +105,17 @@ def risk_level(score):
     return "Low"
 
 
-def build_risk_analysis(destination, days, people):
-    item = next((d for d in DESTINATIONS if d["name"].lower() == destination.lower()), None)
-    if not item:
-        return []
-
+def build_risk_analysis(destination_data, days, people, summary_text, weather):
+    raw = build_dynamic_risks(
+        summary_text,
+        weather,
+        destination_data.get("latitude"),
+    )
     risks = []
-    for name, severity, description in item["risks"]:
+    for name, severity, description in raw:
         adjusted = severity
-        if name == "Trekking fatigue" and days > 10:
-            adjusted = "high"
-        if name in {"Heat", "Heat and dehydration", "Heat and humidity"} and days > 7:
-            adjusted = "high"
+        if days > 10 and adjusted == "low":
+            adjusted = "moderate"
         if people > 6 and adjusted == "low":
             adjusted = "moderate"
         risks.append({
@@ -144,20 +146,36 @@ def plan_trip(data):
     people = int(data.get("people", 2))
     interests = str(data.get("interests", "nature,food")).strip()
 
-    destination = next(
-        (item for item in DESTINATIONS if item["name"].lower() == destination_input.lower()),
-        None,
-    )
+    if days < 1 or days > 30:
+        raise ValueError("Days must be between 1 and 30.")
+    if people < 1 or people > 20:
+        raise ValueError("People must be between 1 and 20.")
 
-    if destination is None:
-        raise ValueError("Destination not supported yet. Try Meghalaya, Manali, Coorg, Goa, Jaipur, Rishikesh, Sikkim or Kerala.")
-
+    destination = resolve_destination(destination_input)
     destination_name = destination["name"]
-    cost = predict_cost(destination_name, days, people, interests)
+
+    summary = wikipedia_summary(destination_name) or {
+        "description": ""
+    }
+    summary_text = summary.get("description", "")
+
+    weather_info = best_time_from_weather(
+        destination.get("latitude"),
+        destination.get("longitude"),
+    )
+    weather = weather_info.get("weather", {})
+
+    cost = predict_cost(destination, days, people, interests, weather)
     per_person = cost / people
-    risk = predict_risk(destination_name, days, people, interests)
+    risk = predict_risk(destination, days, people, interests, weather)
     places = recommend_places(destination_name, interests)
-    risks = build_risk_analysis(destination_name, days, people)
+    risks = build_risk_analysis(
+        destination,
+        days,
+        people,
+        summary_text,
+        weather,
+    )
 
     stay = cost * 0.34
     transport = cost * 0.24
@@ -167,6 +185,12 @@ def plan_trip(data):
 
     return {
         "destination": destination_name,
+        "destination_display": destination.get("display_name", destination_name),
+        "destination_input": destination_input,
+        "destination_corrected": destination.get("corrected", False),
+        "correction_confidence": destination.get("correction_confidence", 0),
+        "latitude": destination.get("latitude"),
+        "longitude": destination.get("longitude"),
         "days": days,
         "people": people,
         "interests": interests,
@@ -183,15 +207,15 @@ def plan_trip(data):
         "risk_score": risk,
         "risk_level": risk_level(risk),
         "risks": risks,
-        "best_time": destination["best_time"],
-        "best_time_note": destination["best_time_note"],
+        "best_time": weather_info["best_time"],
+        "best_time_note": weather_info["best_time_note"],
         "places": places,
         "itinerary": build_itinerary(days, places),
         "model_explanation": {
-            "cost": "Random Forest regression estimates total trip cost from destination, trip duration, group size and interest signals.",
-            "risk": "Random Forest classification estimates overall travel-risk pressure from destination, duration, group size and interest signals.",
-            "places": "TF-IDF cosine similarity ranks places whose descriptions and tags best match the selected interests.",
-            "best_time": "Best-time guidance is destination knowledge data, not a machine-learning prediction.",
-            "training_note": "The current model is a reproducible prototype trained on generated travel scenarios. Real historical travel data would improve production accuracy.",
+            "cost": "Random Forest regression estimates a trip budget from duration, group size, latitude and destination climate signals plus interest patterns. It is a prototype estimate, not a live booking quote.",
+            "risk": "Random Forest classification combines trip characteristics and climate signals; destination-specific risk items are generated from retrieved destination and weather information.",
+            "places": "TF-IDF cosine similarity ranks live destination pages discovered from Wikimedia against the user's interests.",
+            "best_time": "The recommended window is calculated from 10 years of historical Open-Meteo temperature and precipitation data for the resolved destination coordinates.",
+            "training_note": "The ML budget and risk models use reproducible synthetic training scenarios. Live destination information is retrieved at request time, so new destinations do not need to be added to the codebase.",
         },
     }

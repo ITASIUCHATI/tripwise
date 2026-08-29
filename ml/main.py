@@ -2,12 +2,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from predict import plan_trip
-from recommend import suggest_destination
-
+from recommend import resolve_destination
 
 app = FastAPI(
     title="TripWise ML Service",
-    version="2.1.0",
+    version="3.0.0",
 )
 
 
@@ -27,26 +26,26 @@ def health():
     return {
         "status": "ok",
         "service": "TripWise ML",
+        "version": "3.0.0",
     }
 
 
 @app.post("/suggest-destination")
-def destination_suggestion(
-    request: DestinationSuggestionRequest,
-):
+def destination_suggestion(request: DestinationSuggestionRequest):
     try:
-        suggestion = suggest_destination(
-            request.destination,
-        )
-
+        resolved = resolve_destination(request.destination)
+        if not resolved.get("corrected"):
+            return {"suggestion": None}
         return {
-            "suggestion": suggestion,
+            "suggestion": resolved["name"],
+            "confidence": resolved.get("correction_confidence", 0),
         }
-
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(
-            status_code=500,
-            detail="Unable to generate destination suggestion.",
+            status_code=502,
+            detail="Destination intelligence service is temporarily unavailable.",
         ) from error
 
 
@@ -54,9 +53,10 @@ def destination_suggestion(
 def plan(request: TripRequest):
     try:
         return plan_trip(request.model_dump())
-
     except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
         raise HTTPException(
-            status_code=400,
-            detail=str(error),
+            status_code=502,
+            detail="Unable to retrieve live destination information right now. Please try again.",
         ) from error

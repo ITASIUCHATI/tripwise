@@ -6,13 +6,17 @@ import {
 import {
     IsEmail,
     IsString,
+    Matches,
     MinLength,
 } from 'class-validator';
 
 import { AuthService } from './auth.service';
 
 class AuthDto {
-    @IsEmail()
+    @IsEmail({}, { message: 'Please enter a valid email address.' })
+    @Matches(/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/, {
+        message: 'Please enter a valid email address with a domain.'
+    })
     email!: string;
 
     @IsString()

@@ -675,3 +675,32 @@ nav div a.active {
 .destination-suggestion:hover {
     background: #eeeeee;
 }
+
+.suggestion-status {
+    display: block;
+    margin-top: 7px;
+}
+
+.correction-notice {
+    margin: 10px 0 16px;
+    padding: 11px 13px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #f7f6f2;
+    color: var(--muted);
+    line-height: 1.5;
+    font-size: 13px;
+}
+
+.place-image {
+    display: block;
+    width: 100%;
+    max-height: 210px;
+    object-fit: cover;
+    border-radius: 10px;
+    margin-bottom: 13px;
+}
+
+.place-card {
+    overflow: hidden;
+}

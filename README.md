@@ -2,51 +2,107 @@
 
 TripWise is an ML-powered travel planning application built with Next.js, NestJS, PostgreSQL, FastAPI and scikit-learn.
 
-## Current planner flow
+## Current planning flow
 
-The user only enters:
+The planner asks only for:
 
 - Destination
 - Number of days
 - Number of people
 - Interests
 
-TripWise then generates:
+The application does not depend on a fixed destination list.
 
-- ML-estimated total budget and per-person budget
-- Expected cost range and budget breakdown
-- Overall travel-risk score and a list of destination-specific risks
-- Best time to visit and the reason
-- Places to visit ranked against the user's interests, with descriptions
-- A day-by-day suggested itinerary
-- An explanation of which component produced each result
+## Dynamic destination intelligence
 
-Images are intentionally left for the next iteration so the core ML flow stays stable first.
+When a user submits a destination, the ML service resolves it dynamically using external destination data sources. This allows inputs such as:
 
-## Architecture
+- Meghalaya
+- Sikkim
+- Paris
+- Tokyo
+- Darjeeling
+- Kyoto
+- Any other destination that can be resolved by the live sources
 
-Frontend: Vercel
-Backend: Render
-ML service: Render
-Database: PostgreSQL
+A misspelled destination can also produce a machine-assisted correction suggestion. The frontend does not maintain a hard-coded destination list.
 
-## Authentication
+## What the ML service returns
 
-TripWise uses JWT authentication. Each account can access only its own saved trips and dashboard statistics.
+For a resolved destination, TripWise generates:
 
-Demo login:
+- Estimated total budget
+- Per-person budget
+- Budget range
+- Budget breakdown
+- Overall risk score and potential travel risks
+- Best time to visit using historical weather patterns
+- Places discovered dynamically from Wikimedia and ranked against interests using TF-IDF similarity
+- Place descriptions and available images
+- A day-by-day itinerary
 
-Email: demo@tripwise.app
-Password: TripWise@123
+## ML architecture
 
-## ML components
+The system uses a hybrid approach:
 
-Cost prediction uses a Random Forest regression model trained on generated travel scenarios using destination, days, people and interest signals.
+1. Destination resolution is performed dynamically from live geocoding and Wikimedia search data.
+2. Destination summaries and attraction pages are retrieved at request time.
+3. TF-IDF cosine similarity ranks live attraction information against user interests.
+4. A Random Forest regressor estimates a prototype trip budget from trip and climate features.
+5. A Random Forest classifier estimates overall risk pressure from trip and climate features.
+6. Historical weather data is used to calculate a data-driven recommended travel window.
+7. The itinerary optimizer converts ranked places into a day-by-day plan.
 
-Risk prediction uses a Random Forest classification model using destination, duration, group size and interest signals. Destination-specific risk descriptions are supplied from the travel knowledge catalog so the user sees the individual risks rather than only one number.
+The budget and risk models are reproducible prototype models trained on generated scenarios. They are not live hotel, flight or booking prices.
 
-Place recommendation uses TF-IDF cosine similarity over destination-specific place descriptions and tags against the user's interests.
+## External data sources
 
-Best-time guidance and the supporting itinerary are knowledge/rule-based components rather than ML predictions.
+The ML service uses public APIs from Open-Meteo for geocoding and historical weather information and Wikimedia for destination and attraction information.
 
-The current models are a reproducible prototype. Production accuracy would require real historical travel-cost, incident and tourism data.
+No destination needs to be manually added to `ml/recommend.py`.
+
+## Local development
+
+### Backend
+
+```text
+cd backend
+npm install
+npx prisma generate
+npm run start:dev
+```
+
+### ML service
+
+```text
+cd ml
+pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8000
+```
+
+### Frontend
+
+```text
+cd frontend
+npm install
+npm run dev
+```
+
+## Environment variables
+
+Backend:
+
+```text
+DATABASE_URL=
+JWT_SECRET=
+ML_SERVICE_URL=http://localhost:8000
+OPENAI_API_KEY=
+```
+
+Frontend:
+
+```text
+NEXT_PUBLIC_API_URL=http://localhost:3001
+```
+
+For production, set `ML_SERVICE_URL` on the NestJS service to the public URL of the deployed FastAPI ML service and set `NEXT_PUBLIC_API_URL` on the Vercel frontend to the public NestJS backend URL.
