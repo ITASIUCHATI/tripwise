@@ -647,3 +647,31 @@ nav div a.active {
         gap: 6px;
     }
 }
+
+
+.destination-field {
+    position: relative;
+}
+
+.destination-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: fit-content;
+    margin-top: 8px;
+    padding: 7px 10px;
+    border: 1px solid #d8d8d8;
+    border-radius: 8px;
+    background: #f7f7f7;
+    color: #222;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.destination-suggestion strong {
+    text-decoration: underline;
+}
+
+.destination-suggestion:hover {
+    background: #eeeeee;
+}
