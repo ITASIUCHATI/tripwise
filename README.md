@@ -1,6 +1,27 @@
 # TripWise
 
-TripWise is an ML-powered travel planning application built with Next.js, NestJS, PostgreSQL, FastAPI, and scikit-learn.
+TripWise is an ML-powered travel planning application built with Next.js, NestJS, PostgreSQL, FastAPI and scikit-learn.
+
+## Current planner flow
+
+The user only enters:
+
+- Destination
+- Number of days
+- Number of people
+- Interests
+
+TripWise then generates:
+
+- ML-estimated total budget and per-person budget
+- Expected cost range and budget breakdown
+- Overall travel-risk score and a list of destination-specific risks
+- Best time to visit and the reason
+- Places to visit ranked against the user's interests, with descriptions
+- A day-by-day suggested itinerary
+- An explanation of which component produced each result
+
+Images are intentionally left for the next iteration so the core ML flow stays stable first.
 
 ## Architecture
 
@@ -18,16 +39,14 @@ Demo login:
 Email: demo@tripwise.app
 Password: TripWise@123
 
-Users can also create their own account from the login page.
+## ML components
 
-## ML Components
+Cost prediction uses a Random Forest regression model trained on generated travel scenarios using destination, days, people and interest signals.
 
-Cost prediction uses a Random Forest regression model using destination, trip duration, number of travelers, and travel style.
+Risk prediction uses a Random Forest classification model using destination, duration, group size and interest signals. Destination-specific risk descriptions are supplied from the travel knowledge catalog so the user sees the individual risks rather than only one number.
 
-Risk prediction uses a Random Forest classification model using duration, group size, travel style, and the ratio between the user's budget and predicted trip cost.
+Place recommendation uses TF-IDF cosine similarity over destination-specific place descriptions and tags against the user's interests.
 
-Destination recommendation uses TF-IDF cosine similarity across destination profiles and the user's interests, style, and destination preference.
+Best-time guidance and the supporting itinerary are knowledge/rule-based components rather than ML predictions.
 
-Weather suitability and itinerary optimization are supporting rule-based components rather than ML predictions.
-
-The current models use generated travel scenarios for a reproducible prototype. Production accuracy would require retraining with real historical travel data.
+The current models are a reproducible prototype. Production accuracy would require real historical travel-cost, incident and tourism data.

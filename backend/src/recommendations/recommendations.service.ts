@@ -1,5 +1,6 @@
 import {
     BadGatewayException,
+    BadRequestException,
     Injectable,
 } from '@nestjs/common';
 
@@ -11,10 +12,7 @@ export class RecommendationsService {
         private readonly tripsService: TripsService,
     ) {}
 
-    async plan(
-        input: any,
-        userId: number,
-    ) {
+    async plan(input: any, userId: number) {
         const mlServiceUrl =
             process.env.ML_SERVICE_URL ||
             'http://localhost:8000';
@@ -25,29 +23,45 @@ export class RecommendationsService {
                 {
                     method: 'POST',
                     headers: {
-                        'Content-Type':
-                            'application/json',
+                        'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(input),
+                    body: JSON.stringify({
+                        destination: input.destination,
+                        days: Number(input.days),
+                        people: Number(input.people),
+                        interests: input.interests || 'nature,food',
+                    }),
                 },
             );
 
-            if (!response.ok) {
-                throw new Error(
-                    await response.text(),
+            const body = await response.json();
+
+            if (response.status === 400) {
+                throw new BadRequestException(
+                    body?.detail || 'Invalid trip details',
                 );
             }
 
-            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(JSON.stringify(body));
+            }
 
             await this.tripsService.create({
-                ...input,
-                result,
+                destination: body.destination,
+                days: body.days,
+                budget: body.predicted_cost,
+                people: body.people,
+                interests: body.interests,
+                style: 'balanced',
+                result: body,
                 userId,
             });
 
-            return result;
-        } catch {
+            return body;
+        } catch (error) {
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
             throw new BadGatewayException(
                 'ML service is unavailable',
             );

@@ -4,20 +4,10 @@ export default function PlannerPage() {
     return (
         <main className="page">
             <div className="section-head">
-                <p className="eyebrow">
-                    TRIP PLANNER
-                </p>
-
-                <h1>Build your trip</h1>
-
-                <p>
-                    Give TripWise your preferences
-                    and let the ML service score
-                    destinations, cost, risk,
-                    activities, and itinerary.
-                </p>
+                <p className="eyebrow">TRIP PLANNER</p>
+                <h1>Plan smarter with TripWise</h1>
+                <p>Enter only your destination, trip duration, group size and interests. TripWise estimates your budget, identifies travel risks, finds the best time to visit and ranks places worth seeing.</p>
             </div>
-
             <PlannerForm />
         </main>
     );

@@ -382,3 +382,268 @@ nav div a.active {
 .model-details p {
     margin: 0;
 }
+
+.planner-grid-wide {
+    grid-template-columns: minmax(320px, 0.75fr) minmax(0, 1.25fr);
+}
+
+.form-title {
+    margin: 8px 0;
+    font-size: 28px;
+}
+
+.form-help,
+.form small,
+.result-subtitle {
+    color: var(--muted);
+    line-height: 1.55;
+}
+
+.form small {
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.result {
+    min-width: 0;
+}
+
+.highlight strong {
+    font-size: 26px;
+}
+
+.breakdown-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.mini-card,
+.info-box,
+.risk-item,
+.place-card,
+.risk-summary {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+}
+
+.mini-card {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.mini-card span,
+.risk-summary span,
+.place-heading span {
+    color: var(--muted);
+    text-transform: capitalize;
+}
+
+.info-box p,
+.risk-item p,
+.place-card p {
+    margin: 8px 0 0;
+    color: var(--muted);
+    line-height: 1.55;
+}
+
+.risk-summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+    margin-bottom: 12px;
+}
+
+.risk-list,
+.place-list {
+    display: grid;
+    gap: 10px;
+}
+
+.risk-heading,
+.place-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+    align-items: center;
+}
+
+.risk-heading span {
+    text-transform: uppercase;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.place-heading h4 {
+    margin: 0;
+    font-size: 17px;
+}
+
+@media (max-width: 900px) {
+    .planner-grid-wide {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 520px) {
+    .breakdown-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .risk-summary,
+    .mini-card,
+    .risk-heading,
+    .place-heading {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+.analysis-header {
+    margin-bottom: 12px;
+}
+
+.analysis-header h2 {
+    margin-bottom: 8px;
+}
+
+.analysis-badge {
+    display: inline-block;
+    margin: 0 0 18px;
+    padding: 7px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: #f7f6f2;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.budget-main {
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #faf9f6;
+}
+
+.budget-main span {
+    display: block;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.budget-main strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 34px;
+    line-height: 1.1;
+}
+
+.budget-secondary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.budget-secondary .metric {
+    display: block;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+
+.budget-secondary .metric strong {
+    display: block;
+    margin-top: 6px;
+}
+
+.prediction-note {
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.risk-summary > div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.risk-summary strong {
+    font-size: 18px;
+}
+
+.place-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.place-tags span {
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: #f2f0eb;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.itinerary {
+    display: grid;
+    gap: 0;
+}
+
+.itinerary .day {
+    display: grid;
+    grid-template-columns: 65px 1fr;
+    align-items: start;
+}
+
+.itinerary .day > div {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.itinerary .day span {
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.model-details {
+    margin-bottom: 0;
+}
+
+.model-details > div {
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eeeeee;
+}
+
+.model-details > div:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.model-details strong {
+    display: block;
+    margin-bottom: 4px;
+}
+
+@media (max-width: 520px) {
+    .budget-secondary {
+        grid-template-columns: 1fr;
+    }
+
+    .budget-main strong {
+        font-size: 29px;
+    }
+
+    .itinerary .day {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+}
