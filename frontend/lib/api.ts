@@ -7,22 +7,15 @@ export function getToken() {
         return null;
     }
 
-    return localStorage.getItem(
-        'tripwise_token',
-    );
+    return localStorage.getItem('tripwise_token');
 }
 
 export function saveToken(token: string) {
-    localStorage.setItem(
-        'tripwise_token',
-        token,
-    );
+    localStorage.setItem('tripwise_token', token);
 }
 
 export function clearToken() {
-    localStorage.removeItem(
-        'tripwise_token',
-    );
+    localStorage.removeItem('tripwise_token');
 }
 
 export async function api(
@@ -31,9 +24,10 @@ export async function api(
 ) {
     const token = getToken();
 
-    const response = await fetch(
-        `${baseUrl}${path}`,
-        {
+    let response: Response;
+
+    try {
+        response = await fetch(`${baseUrl}${path}`, {
             ...options,
             headers: {
                 'Content-Type': 'application/json',
@@ -44,19 +38,44 @@ export async function api(
                     : {}),
                 ...(options.headers || {}),
             },
-        },
-    );
+        });
+    } catch {
+        throw new Error(
+            'Unable to connect to the TripWise server. Please try again in a moment.',
+        );
+    }
 
     if (response.status === 401) {
         clearToken();
     }
 
     if (!response.ok) {
-        const message = await response.text();
+        const contentType = response.headers.get('content-type') || '';
+        let message = '';
 
-        throw new Error(
-            message || 'Request failed',
-        );
+        if (contentType.includes('application/json')) {
+            try {
+                const body = await response.json();
+                message =
+                    typeof body?.detail === 'string'
+                        ? body.detail
+                        : typeof body?.message === 'string'
+                          ? body.message
+                          : '';
+            } catch {
+                message = '';
+            }
+        }
+
+        if (!message) {
+            try {
+                message = await response.text();
+            } catch {
+                message = '';
+            }
+        }
+
+        throw new Error(message || 'Request failed. Please try again.');
     }
 
     return response.json();

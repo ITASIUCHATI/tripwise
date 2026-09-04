@@ -1,14 +1,16 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from 'react';
+import { Suspense, FormEvent, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { api, saveToken } from '../../lib/api';
 
-export default function LoginPage() {
+type AuthMode = 'login' | 'register';
+
+function LoginContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [mode, setMode] = useState<'login' | 'register'>('login');
+    const [mode, setMode] = useState<AuthMode>('login');
     const [email, setEmail] = useState('demo@tripwise.app');
     const [password, setPassword] = useState('TripWise@123');
     const [error, setError] = useState('');
@@ -25,26 +27,40 @@ export default function LoginPage() {
     async function submit(event: FormEvent) {
         event.preventDefault();
         setError('');
+
         if (!isValidEmail(email)) {
             setError('Please enter a valid email address.');
             return;
         }
+
         setLoading(true);
+
         try {
-            const data = await api(mode === 'login' ? '/auth/login' : '/auth/register', {
-                method: 'POST',
-                body: JSON.stringify({ email, password }),
-            });
+            const data = await api(
+                mode === 'login' ? '/auth/login' : '/auth/register',
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        email: email.trim(),
+                        password,
+                    }),
+                },
+            );
+
             saveToken(data.token);
             router.replace('/planner');
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : 'Authentication failed.');
+            setError(
+                requestError instanceof Error
+                    ? requestError.message
+                    : 'Authentication failed.',
+            );
         } finally {
             setLoading(false);
         }
     }
 
-    function switchMode(nextMode: 'login' | 'register') {
+    function switchMode(nextMode: AuthMode) {
         setMode(nextMode);
         setError('');
         router.replace(`/login?mode=${nextMode}`);
@@ -55,24 +71,63 @@ export default function LoginPage() {
             <div className="card auth-card">
                 <p className="eyebrow">TRIPWISE ACCOUNT</p>
                 <h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
-                <p>{mode === 'login' ? 'Sign in to access your saved trips and planner.' : 'Create your account to keep your trips private and saved.'}</p>
+                <p>
+                    {mode === 'login'
+                        ? 'Sign in to access your saved trips and planner.'
+                        : 'Create your account to keep your trips private and saved.'}
+                </p>
 
                 <div className="auth-switcher">
-                    <button type="button" className={mode === 'login' ? 'auth-switch active' : 'auth-switch'} onClick={() => switchMode('login')}>Sign in</button>
-                    <button type="button" className={mode === 'register' ? 'auth-switch active' : 'auth-switch'} onClick={() => switchMode('register')}>Create account</button>
+                    <button
+                        type="button"
+                        className={mode === 'login' ? 'auth-switch active' : 'auth-switch'}
+                        onClick={() => switchMode('login')}
+                    >
+                        Sign in
+                    </button>
+                    <button
+                        type="button"
+                        className={mode === 'register' ? 'auth-switch active' : 'auth-switch'}
+                        onClick={() => switchMode('register')}
+                    >
+                        Create account
+                    </button>
                 </div>
 
                 <form className="form" onSubmit={submit}>
                     <label>
                         Email
-                        <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" inputMode="email" />
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(event) => setEmail(event.target.value)}
+                            required
+                            autoComplete="email"
+                            inputMode="email"
+                        />
                     </label>
+
                     <label>
                         Password
-                        <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={6} required autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            minLength={6}
+                            required
+                            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                        />
                     </label>
+
                     {error && <p className="error">{error}</p>}
-                    <button className="button" disabled={loading} type="submit">{loading ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
+
+                    <button className="button" disabled={loading} type="submit">
+                        {loading
+                            ? 'Please wait...'
+                            : mode === 'login'
+                              ? 'Sign in'
+                              : 'Create account'}
+                    </button>
                 </form>
 
                 {mode === 'login' && (
@@ -84,5 +139,20 @@ export default function LoginPage() {
                 )}
             </div>
         </main>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={
+            <main className="auth-page">
+                <div className="card auth-card">
+                    <p className="eyebrow">TRIPWISE ACCOUNT</p>
+                    <h1>Loading...</h1>
+                </div>
+            </main>
+        }>
+            <LoginContent />
+        </Suspense>
     );
 }

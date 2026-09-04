@@ -78,7 +78,7 @@ def geocode_destination(query):
 
 
 @lru_cache(maxsize=256)
-def wikipedia_search(query):
+def wikipedia_search_data(query):
     params = urllib.parse.urlencode(
         {
             "action": "query",
@@ -89,8 +89,89 @@ def wikipedia_search(query):
             "utf8": 1,
         }
     )
-    data = _request_json(f"https://en.wikipedia.org/w/api.php?{params}")
-    return data.get("query", {}).get("search", [])
+    return _request_json(f"https://en.wikipedia.org/w/api.php?{params}")
+
+
+def wikipedia_search(query):
+    return wikipedia_search_data(query).get("query", {}).get("search", [])
+
+
+@lru_cache(maxsize=256)
+def wikipedia_suggestion(query):
+    try:
+        data = wikipedia_search_data(query)
+        suggestion = (data.get("query", {}).get("searchinfo", {}) or {}).get("suggestion")
+        return _clean_text(suggestion)
+    except Exception:
+        return ""
+
+
+@lru_cache(maxsize=512)
+def spelling_suggestions(query):
+    suggestions = []
+
+    try:
+        params = urllib.parse.urlencode({"s": query, "max": 12})
+        data = _request_json(f"https://api.datamuse.com/sug?{params}")
+        for item in data if isinstance(data, list) else []:
+            word = _clean_text(item.get("word"))
+            if word:
+                suggestions.append(word)
+    except Exception:
+        pass
+
+    try:
+        params = urllib.parse.urlencode({"sp": query, "max": 12})
+        data = _request_json(f"https://api.datamuse.com/words?{params}")
+        for item in data if isinstance(data, list) else []:
+            word = _clean_text(item.get("word"))
+            if word:
+                suggestions.append(word)
+    except Exception:
+        pass
+
+    unique = []
+    seen = set()
+    for word in suggestions:
+        key = word.casefold()
+        if key not in seen:
+            seen.add(key)
+            unique.append(word)
+    return unique[:20]
+
+
+@lru_cache(maxsize=256)
+def photon_search(query):
+    try:
+        params = urllib.parse.urlencode({
+            "q": query,
+            "limit": 12,
+            "lang": "en",
+        })
+        data = _request_json(f"https://photon.komoot.io/api/?{params}")
+        results = []
+        for feature in data.get("features", []):
+            properties = feature.get("properties") or {}
+            geometry = feature.get("geometry") or {}
+            coordinates = geometry.get("coordinates") or []
+            if len(coordinates) < 2:
+                continue
+            name = _clean_text(properties.get("name"))
+            if not name:
+                continue
+            results.append({
+                "name": name,
+                "admin1": _clean_text(properties.get("state") or properties.get("county")),
+                "country": _clean_text(properties.get("country")),
+                "country_code": _clean_text(properties.get("countrycode")),
+                "longitude": coordinates[0],
+                "latitude": coordinates[1],
+                "population": properties.get("population"),
+                "feature_code": _clean_text(properties.get("osm_value") or properties.get("type")),
+            })
+        return results
+    except Exception:
+        return []
 
 
 @lru_cache(maxsize=256)
@@ -185,38 +266,67 @@ def _fuzzy_location_candidates(query):
 
     def add(value, source_score):
         value = _clean_text(value)
-        if not value or value.lower() in seen:
+        key = value.casefold()
+        if not value or key in seen:
             return
-        seen.add(value.lower())
+        seen.add(key)
         candidates.append((value, source_score))
 
     try:
-        for item in wikidata_search(query):
-            add(item.get("label"), 1.0)
+        suggestion = wikipedia_suggestion(query)
+        if suggestion:
+            add(suggestion, 1.0)
     except Exception:
         pass
 
-    for search_query in [query, f"{query} travel", f"{query} city", f"{query} tourist"]:
+    try:
+        for value in spelling_suggestions(query):
+            add(value, 0.95)
+    except Exception:
+        pass
+
+    try:
+        for item in wikidata_search(query):
+            add(item.get("label"), 0.9)
+    except Exception:
+        pass
+
+    search_queries = [
+        query,
+        f"{query} travel",
+        f"{query} city",
+        f"{query} tourist destination",
+    ]
+    for search_query in search_queries:
         try:
             for item in wikipedia_search(search_query):
-                add(item.get("title"), 0.8)
+                add(item.get("title"), 0.75)
         except Exception:
             pass
 
     try:
+        for location in photon_search(query):
+            name = location.get("name")
+            if name:
+                add(name, 1.1)
+    except Exception:
+        pass
+
+    try:
         for title in wikipedia_opensearch(query):
-            add(title, 0.9)
+            add(title, 0.8)
     except Exception:
         pass
 
     scored = []
     for candidate, source_score in candidates:
         raw = _match_score(query, candidate)
-        score = min(100.0, raw + source_score * 2.0)
-        if raw >= 45:
+        token_overlap = len(set(re.findall(r"[a-z0-9]+", query.lower())) & set(re.findall(r"[a-z0-9]+", candidate.lower())))
+        score = min(100.0, raw + source_score * 3.0 + token_overlap * 2.0)
+        if raw >= 45 or source_score >= 0.95:
             scored.append((candidate, score, raw))
-    scored.sort(key=lambda item: item[1], reverse=True)
-    return scored[:8]
+    scored.sort(key=lambda item: (item[1], item[2]), reverse=True)
+    return scored[:12]
 
 
 def search_destination_options(query):
@@ -229,23 +339,62 @@ def search_destination_options(query):
     except Exception:
         direct = []
 
-    if direct:
-        exact = [item for item in direct if item["name"].lower() == original.lower()]
-        if exact:
-            return _dedupe_locations(exact + [item for item in direct if item not in exact])[:8]
-        return _dedupe_locations(direct)[:8]
+    exact = [item for item in direct if item["name"].lower() == original.lower()]
+    if exact:
+        return _dedupe_locations(exact + [item for item in direct if item not in exact])[:8]
 
     locations = []
+    seen_locations = set()
+
+    photon_locations = photon_search(original)
+    for location in photon_locations:
+        raw = _match_score(original, location.get("name", ""))
+        if raw >= 55:
+            location["correction_score"] = round(min(100.0, raw + 8.0), 1)
+            location["raw_match_score"] = round(raw, 1)
+            key = (
+                location.get("name", "").casefold(),
+                location.get("admin1", "").casefold(),
+                location.get("country", "").casefold(),
+            )
+            if key not in seen_locations:
+                seen_locations.add(key)
+                locations.append(location)
+
     for candidate, score, raw in _fuzzy_location_candidates(original):
         try:
             geocoded = geocode_destination(candidate)
         except Exception:
             geocoded = []
         for location in geocoded[:4]:
+            key = (
+                location.get("name", "").casefold(),
+                location.get("admin1", "").casefold(),
+                location.get("country", "").casefold(),
+            )
+            if key in seen_locations:
+                continue
+            seen_locations.add(key)
             location["correction_score"] = round(min(100.0, score), 1)
             location["raw_match_score"] = round(raw, 1)
             locations.append(location)
 
+    if not locations:
+        for location in direct:
+            raw = _match_score(original, location.get("name", ""))
+            if raw >= 70:
+                location["correction_score"] = round(raw, 1)
+                location["raw_match_score"] = round(raw, 1)
+                locations.append(location)
+
+    locations.sort(
+        key=lambda item: (
+            item.get("correction_score", 0),
+            item.get("raw_match_score", 0),
+            item.get("population") or 0,
+        ),
+        reverse=True,
+    )
     return _dedupe_locations(locations)[:8]
 
 

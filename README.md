@@ -4,8 +4,9 @@ TripWise is an ML-powered travel planning application built with Next.js, NestJS
 
 ## Current planning flow
 
-The planner asks only for:
+The planner asks for:
 
+- Starting location
 - Destination
 - Number of days
 - Number of people
@@ -51,7 +52,7 @@ The system uses a hybrid approach:
 4. A Random Forest regressor estimates a prototype trip budget from trip and climate features.
 5. A Random Forest classifier estimates overall risk pressure from trip and climate features.
 6. Historical weather data is used to calculate a data-driven recommended travel window.
-7. The itinerary optimizer converts ranked places into a day-by-day plan.
+7. The itinerary builder converts ranked places into a day-by-day plan.
 
 The budget and risk models are reproducible prototype models trained on generated scenarios. They are not live hotel, flight or booking prices.
 
